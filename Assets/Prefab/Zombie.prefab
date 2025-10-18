@@ -106,7 +106,7 @@ MonoBehaviour:
   _playerTag: Player
   _animator: {fileID: 0}
   _vehicleTag: Player
-  _impactForceMultiplier: 20
+  _impactForceMultiplier: 60
   _ragdollCleanupTime: 20
 --- !u!195 &2706292005938212196
 NavMeshAgent:

@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e7a6436705d77e643b802acde335ebba, type: 3}
+  m_Name: Zombies Wave
+  m_EditorClassIdentifier: 
+  EnemyPrefab: {fileID: 8640020499120940841, guid: e1fe4dd418f191b40be3f8dc9f39e71f, type: 3}
+  EnemyCount: 30
+  SpawnRate: 2
