@@ -617,7 +617,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: -0.000000002240776, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.1, z: -4}
+  m_LocalPosition: {x: 0, y: 1.6, z: -6}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1477,6 +1477,68 @@ Transform:
   m_Children: []
   m_Father: {fileID: 683604927}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &617080285
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 683604927}
+    m_Modifications:
+    - target: {fileID: 1945217638652522, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_Name
+      value: SM_Veh_Sports_Preset_02
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+--- !u!4 &617080286 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4398482738983002, guid: c806ba5ddf837bc4bac4cd03a9905e32, type: 3}
+  m_PrefabInstance: {fileID: 617080285}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &643354448
 GameObject:
   m_ObjectHideFlags: 0
@@ -1703,6 +1765,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1557682889}
+  - {fileID: 617080286}
   - {fileID: 586770409}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -1724,8 +1787,7 @@ MonoBehaviour:
   _deceleration: 15
   _brakePower: 40
   _steeringSpeed: 120
-  _minSpeedToSteer: 0.5
-  _steeringSpeedCurve:
+  _steeringCurve:
     serializedVersion: 2
     m_Curve:
     - serializedVersion: 3
@@ -1738,17 +1800,8 @@ MonoBehaviour:
       inWeight: 0
       outWeight: 0
     - serializedVersion: 3
-      time: 0.5
-      value: 1
-      inSlope: 0.036042854
-      outSlope: 0.036042854
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0.16037738
-    - serializedVersion: 3
       time: 1
-      value: 0.3
+      value: 1
       inSlope: 0
       outSlope: 0
       tangentMode: 0
@@ -1759,7 +1812,8 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   _enableDrifting: 1
-  _driftGrip: 0.85
+  _sidewaysGrip: 0.9
+  _driftGrip: 0.8
   _driftSteeringBoost: 1.3
 --- !u!1 &709326803
 GameObject:
@@ -2508,10 +2562,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Damping: {x: 0.1, y: 0.5, z: 0.3}
-  ShoulderOffset: {x: 0, y: -0.6, z: 0}
+  ShoulderOffset: {x: 0, y: -0.1, z: 0}
   VerticalArmLength: 1.2
   CameraSide: 1
-  CameraDistance: 4
+  CameraDistance: 6
   AvoidObstacles:
     Enabled: 0
     CollisionFilter:
@@ -2573,7 +2627,7 @@ Transform:
   m_GameObject: {fileID: 952911452}
   serializedVersion: 2
   m_LocalRotation: {x: -0.000000002240776, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.1, z: -4}
+  m_LocalPosition: {x: 0, y: 1.6, z: -6}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3308,7 +3362,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1557682889
 Transform:
   m_ObjectHideFlags: 0

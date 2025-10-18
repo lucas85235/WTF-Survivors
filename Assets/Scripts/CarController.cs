@@ -2,8 +2,8 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// A top-down car controller with realistic mechanics for acceleration, braking, reversing, and steering.
-/// Designed to work with a Rigidbody for stable physics.
+/// An arcade-style car controller using Rigidbody velocity for stable physics.
+/// Features distinct acceleration, deceleration, braking, and a functional drift mechanic.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public class CarController : MonoBehaviour
@@ -11,31 +11,32 @@ public class CarController : MonoBehaviour
     [Header("Movement Settings")]
     [SerializeField] private float _maxForwardSpeed = 20f;
     [SerializeField] private float _maxReverseSpeed = 8f;
-    [SerializeField] private float _acceleration = 25f;
-    [Tooltip("The rate at which the car slows down when not accelerating. This is the natural 'friction' or 'drag'.")]
+    [SerializeField] private float _acceleration = 30f;
+    [Tooltip("How quickly the car slows down when coasting (no input).")]
     [SerializeField] private float _deceleration = 15f;
-    [Tooltip("How powerful the brakes are. Should be higher than acceleration.")]
-    [SerializeField] private float _brakePower = 40f;
+    [Tooltip("The power of the brakes. Higher values stop the car faster.")]
+    [SerializeField] private float _brakePower = 50f;
 
     [Header("Steering Settings")]
+    [Tooltip("How fast the car turns. This is modified by the steering curve.")]
     [SerializeField] private float _steeringSpeed = 120f;
-    [Tooltip("How much steering is reduced at max speed. 0 = no reduction, 1 = full reduction.")]
-    [Range(0, 1)]
-    [SerializeField] private float _minSpeedToSteer = 0.5f;
-    [SerializeField] private AnimationCurve _steeringSpeedCurve;
+    [Tooltip("Defines steering sensitivity based on speed (X-axis: 0=stopped, 1=max speed).")]
+    [SerializeField] private AnimationCurve _steeringCurve = AnimationCurve.EaseInOut(0, 1, 1, 0.5f);
 
-    [Header("Drifting")]
+    [Header("Drifting & Grip")]
     [SerializeField] private bool _enableDrifting = true;
-    [Tooltip("How much grip the car loses during a drift (0-1). Lower values mean more slip.")]
+    [Tooltip("How much sideways grip the car has (0-1). Higher values mean less sliding.")]
     [Range(0, 1)]
-    [SerializeField] private float _driftGrip = 0.85f;
+    [SerializeField] private float _sidewaysGrip = 0.9f;
+    [Tooltip("Sideways grip during a drift. Lower than normal grip to allow sliding.")]
+    [Range(0, 1)]
+    [SerializeField] private float _driftGrip = 0.4f;
     [Tooltip("A multiplier for steering speed during a drift.")]
-    [SerializeField] private float _driftSteeringBoost = 1.3f;
+    [SerializeField] private float _driftSteeringBoost = 1.5f;
 
     // Internal State
-    private float _currentSpeed = 0f;
     private float _steeringInput = 0f;
-    private float _accelerationInput = 0f; // Combined forward/reverse input
+    private float _accelerationInput = 0f;
     private bool _isBraking = false;
     private bool _isDrifting = false;
 
@@ -52,7 +53,7 @@ public class CarController : MonoBehaviour
 
     private void OnEnable()
     {
-        // Subscribe to all input actions
+        _inputActions.Car.Enable();
         _inputActions.Car.Accelerate.performed += OnAccelerate;
         _inputActions.Car.Accelerate.canceled += OnAccelerate;
         _inputActions.Car.Brake.performed += OnBrake;
@@ -61,12 +62,10 @@ public class CarController : MonoBehaviour
         _inputActions.Car.Steer.canceled += OnSteer;
         _inputActions.Car.Drift.performed += OnDrift;
         _inputActions.Car.Drift.canceled += OnDrift;
-        _inputActions.Car.Enable();
     }
 
     private void OnDisable()
     {
-        // Unsubscribe to prevent memory leaks
         _inputActions.Car.Disable();
         _inputActions.Car.Accelerate.performed -= OnAccelerate;
         _inputActions.Car.Accelerate.canceled -= OnAccelerate;
@@ -78,13 +77,11 @@ public class CarController : MonoBehaviour
         _inputActions.Car.Drift.canceled -= OnDrift;
     }
 
-    /// <summary>
-    /// Physics calculations should always be in FixedUpdate.
-    /// </summary>
     private void FixedUpdate()
     {
         ProcessMovement();
         ProcessSteering();
+        ApplySidewaysGrip();
     }
 
     #endregion
@@ -102,61 +99,70 @@ public class CarController : MonoBehaviour
 
     private void ProcessMovement()
     {
-        // Determine the target speed based on input
+        // Get the current speed along the car's forward direction.
+        // Dot product gives us this: positive is forward, negative is reverse.
+        float currentForwardSpeed = Vector3.Dot(transform.forward, _rb.linearVelocity);
+
+        // Determine the target speed based on player input.
         float targetSpeed = 0f;
         if (_accelerationInput > 0)
             targetSpeed = _maxForwardSpeed;
         else if (_accelerationInput < 0)
             targetSpeed = -_maxReverseSpeed;
 
-        // Determine the rate of acceleration/deceleration
+        // Determine the rate of change (acceleration, deceleration, or braking).
         float accelerationRate;
 
-        // Check for braking conditions
-        bool isActivelyBraking = (_isBraking || (Mathf.Sign(_accelerationInput) != Mathf.Sign(_currentSpeed) && _currentSpeed != 0));
-
-        if (isActivelyBraking)
+        // Condition for braking: Player presses the brake key, OR is trying to reverse while moving forward.
+        if (_isBraking || (Mathf.Sign(_accelerationInput) == -1 && Mathf.Sign(currentForwardSpeed) == 1))
         {
             accelerationRate = _brakePower;
         }
-        else if (_accelerationInput != 0)
+        else if (Mathf.Abs(_accelerationInput) > 0)
         {
             accelerationRate = _acceleration;
         }
-        else // No input, apply natural deceleration (our new friction)
+        else // No input, apply coasting deceleration.
         {
             accelerationRate = _deceleration;
         }
 
-        // Use MoveTowards to smoothly change the current speed
-        _currentSpeed = Mathf.MoveTowards(_currentSpeed, targetSpeed, accelerationRate * Time.fixedDeltaTime);
+        // Use MoveTowards to smoothly change the forward speed.
+        float newForwardSpeed = Mathf.MoveTowards(currentForwardSpeed, targetSpeed, accelerationRate * Time.fixedDeltaTime);
 
-        // Apply movement to the Rigidbody
-        Vector3 movement = transform.forward * _currentSpeed * Time.fixedDeltaTime;
-        _rb.MovePosition(_rb.position + movement);
+        // Apply the new forward speed.
+        _rb.linearVelocity = transform.forward * newForwardSpeed + transform.right * Vector3.Dot(_rb.linearVelocity, transform.right);
     }
 
     private void ProcessSteering()
     {
-        if (Mathf.Abs(_currentSpeed) < _minSpeedToSteer) return;
+        // Calculate steering sensitivity based on the car's current speed.
+        float speedFactor = Mathf.Clamp01(_rb.linearVelocity.magnitude / _maxForwardSpeed);
+        float steeringMultiplier = _steeringCurve.Evaluate(speedFactor);
+        float currentSteeringSpeed = _steeringSpeed * steeringMultiplier;
 
-        float inputMagnitude = Mathf.Abs(_currentSpeed) / _maxForwardSpeed;
-        float steeringMultiplier = _steeringSpeedCurve.Evaluate(inputMagnitude);
-
-        // Reduce steering effectiveness at higher speeds for more realistic handling
-        float speedFactor = 1 - (Mathf.Abs(_currentSpeed) / _maxForwardSpeed * steeringMultiplier);
-        float currentSteeringSpeed = _steeringSpeed * speedFactor;
-
-        // Apply drift boost if drifting
         if (_isDrifting)
         {
             currentSteeringSpeed *= _driftSteeringBoost;
         }
 
-        // Calculate rotation and apply it to the Rigidbody
+        // Calculate and apply rotation.
         float steeringAmount = _steeringInput * currentSteeringSpeed * Time.fixedDeltaTime;
-        Quaternion deltaRotation = Quaternion.Euler(0, steeringAmount, 0);
+        Quaternion deltaRotation = Quaternion.Euler(Vector3.up * steeringAmount);
         _rb.MoveRotation(_rb.rotation * deltaRotation);
+    }
+
+    private void ApplySidewaysGrip()
+    {
+        // Get velocity sideways to the car's direction.
+        Vector3 sidewaysVelocity = transform.right * Vector3.Dot(_rb.linearVelocity, transform.right);
+
+        // Determine the current grip based on whether we are drifting.
+        float currentGrip = _isDrifting ? _driftGrip : _sidewaysGrip;
+
+        // Apply a counter-force to reduce sideways velocity, simulating grip.
+        Vector3 counterForce = -sidewaysVelocity * (1 - currentGrip) * 10f; // Multiplier to make grip feel responsive
+        _rb.AddForce(counterForce, ForceMode.VelocityChange);
     }
 
     #endregion
