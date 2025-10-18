@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Unity.Cinemachine;
 
 /// <summary>
 /// An arcade-style car controller using Rigidbody velocity for stable physics.
@@ -34,9 +35,23 @@ public class CarController : MonoBehaviour
     [Tooltip("A multiplier for steering speed during a drift.")]
     [SerializeField] private float _driftSteeringBoost = 1.5f;
 
+    [Header("Visual Feedback")]
+    [SerializeField] private float _tiltSmoothness = 8f;
+
+    [Header("Wheel Feedback")]
+    [SerializeField] private Transform[] _frontWheels;
+    [SerializeField] private Transform[] _allWheels;
+    [SerializeField] private float _wheelRadius = 0.35f;
+    [SerializeField] private float _maxWheelSteerAngle = 30f;
+
+    [Header("Camera")]
+    [SerializeField] private CinemachineThirdPersonFollow _carCamera;
+
     // Internal State
     private float _steeringInput = 0f;
     private float _accelerationInput = 0f;
+    private float _currentWheelAngle = 0f;
+    private float _currentCameraSide = 0.5f; // 0 = left, 1 = right
     private bool _isBraking = false;
     private bool _isDrifting = false;
 
@@ -75,6 +90,12 @@ public class CarController : MonoBehaviour
         _inputActions.Car.Steer.canceled -= OnSteer;
         _inputActions.Car.Drift.performed -= OnDrift;
         _inputActions.Car.Drift.canceled -= OnDrift;
+    }
+
+    private void Update()
+    {
+        UpdateWheels();
+        CameraSide();
     }
 
     private void FixedUpdate()
@@ -163,6 +184,44 @@ public class CarController : MonoBehaviour
         // Apply a counter-force to reduce sideways velocity, simulating grip.
         Vector3 counterForce = -sidewaysVelocity * (1 - currentGrip) * 10f; // Multiplier to make grip feel responsive
         _rb.AddForce(counterForce, ForceMode.VelocityChange);
+    }
+
+    #endregion
+
+    #region Feedbacks
+
+    private void CameraSide()
+    {
+        _steeringInput = Mathf.Clamp(_steeringInput, -1f, 1f);
+        float cameraTargetSide = (_steeringInput + 1f) / 2f; // Normalize to 0-1 for Cinemachine
+        _currentCameraSide = Mathf.Lerp(_currentCameraSide, cameraTargetSide, Time.deltaTime * 2f);
+        _carCamera.CameraSide = _currentCameraSide;
+    }
+
+    private void UpdateWheels()
+    {
+        if (_frontWheels != null && _frontWheels.Length > 0)
+        {
+            float targetWheelAngle = _steeringInput * _maxWheelSteerAngle;
+            _currentWheelAngle = Mathf.LerpAngle(_currentWheelAngle, targetWheelAngle, _tiltSmoothness * Time.deltaTime);
+
+            foreach (var wheel in _frontWheels)
+            {
+                var euler = wheel.localRotation.eulerAngles;
+                wheel.localRotation = Quaternion.Euler(euler.x, _currentWheelAngle, euler.z);
+            }
+        }
+
+        if (_allWheels != null && _wheelRadius > 0)
+        {
+            float speed = Vector3.Dot(transform.forward, _rb.linearVelocity);
+            float wheelRotation = (speed * Time.deltaTime / (2f * Mathf.PI * _wheelRadius)) * 360f;
+
+            foreach (var wheel in _allWheels)
+            {
+                wheel.Rotate(wheelRotation, 0, 0, Space.Self);
+            }
+        }
     }
 
     #endregion
