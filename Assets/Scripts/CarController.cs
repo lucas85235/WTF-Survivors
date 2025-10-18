@@ -167,6 +167,11 @@ public class CarController : MonoBehaviour
             currentSteeringSpeed *= _driftSteeringBoost;
         }
 
+        if (_accelerationInput < 0)
+        {
+            currentSteeringSpeed = -currentSteeringSpeed;
+        }
+
         // Calculate and apply rotation.
         float steeringAmount = _steeringInput * currentSteeringSpeed * Time.fixedDeltaTime;
         Quaternion deltaRotation = Quaternion.Euler(Vector3.up * steeringAmount);
