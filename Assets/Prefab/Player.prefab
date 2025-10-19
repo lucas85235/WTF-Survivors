@@ -270,7 +270,7 @@ GameObject:
   m_Component:
   - component: {fileID: 9198182173780949265}
   - component: {fileID: 7915953787608125628}
-  - component: {fileID: 5451871574871575450}
+  - component: {fileID: 6251296853778905630}
   - component: {fileID: 5826279214026256132}
   m_Layer: 6
   m_Name: Player
@@ -305,7 +305,7 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 599633049646352319}
   serializedVersion: 5
-  m_Mass: 100
+  m_Mass: 250
   m_LinearDamping: 0
   m_AngularDamping: 0.05
   m_CenterOfMass: {x: 0, y: 0, z: 0}
@@ -324,8 +324,8 @@ Rigidbody:
   m_Interpolate: 1
   m_Constraints: 80
   m_CollisionDetection: 2
---- !u!65 &5451871574871575450
-BoxCollider:
+--- !u!136 &6251296853778905630
+CapsuleCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
@@ -342,9 +342,11 @@ BoxCollider:
   m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 2.08, y: 1, z: 5}
-  m_Center: {x: 0, y: 0.5, z: 0.06}
+  serializedVersion: 2
+  m_Radius: 1
+  m_Height: 5
+  m_Direction: 2
+  m_Center: {x: 0, y: 1, z: 0}
 --- !u!114 &5826279214026256132
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2676,7 +2678,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &4766882148536173576
 Transform:
   m_ObjectHideFlags: 0
