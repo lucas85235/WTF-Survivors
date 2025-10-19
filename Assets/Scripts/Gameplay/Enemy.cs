@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.AI; // Importante para o NavMeshAgent
 
@@ -8,7 +9,7 @@ using UnityEngine.AI; // Importante para o NavMeshAgent
 /// Manages enemy behavior using a state machine and NavMeshAgent for movement.
 /// Includes a robust ragdoll system for vehicle collisions.
 /// </summary>
-[RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
+[RequireComponent(typeof(NavMeshAgent))]
 public class Enemy : MonoBehaviour
 {
     private enum EnemyState { Walking, Attacking, Ragdolled }
@@ -25,6 +26,10 @@ public class Enemy : MonoBehaviour
 
     [Header("Ragdoll Settings")]
     [SerializeField] private string _vehicleTag = "Car";
+    [SerializeField] private float _minSpeedToRagdoll = 5f;
+    [SerializeField] private float _baseImpactForce = 50f;
+    [SerializeField] private float _upwardForceComponent = 0.5f;
+    [SerializeField] private float _speedToForceMultiplier = 2f;
     [SerializeField] private float _impactForceMultiplier = 15f;
     [SerializeField] private float _ragdollCleanupTime = 10f;
 
@@ -45,7 +50,6 @@ public class Enemy : MonoBehaviour
     {
         // --- Pegar todos os componentes necessários ---
         _navAgent = GetComponent<NavMeshAgent>();
-        _animator = GetComponent<Animator>();
         _mainRigidbody = GetComponent<Rigidbody>();
         _mainCollider = GetComponent<Collider>();
 
@@ -135,19 +139,38 @@ public class Enemy : MonoBehaviour
         }
     }
 
-    private void OnCollisionEnter(Collision collision)
+    private void OnTriggerEnter(Collider other)
     {
         if (_currentState == EnemyState.Ragdolled) return;
 
-        if (collision.gameObject.CompareTag(_vehicleTag))
+        if (other.CompareTag(_vehicleTag))
         {
-            Rigidbody carRigidbody = collision.rigidbody;
-            if (carRigidbody != null)
+            Debug.Log($"Enemy triggered by {other.gameObject.name}");
+
+            // _navAgent.enabled = false;
+            // canMove = false;
+
+            Rigidbody carRigidbody = other.attachedRigidbody;
+            if (carRigidbody == null) return;
+
+            float carSpeed = carRigidbody.linearVelocity.magnitude;
+
+            // 1. CHECAR A VELOCIDADE MÍNIMA
+            if (carSpeed < _minSpeedToRagdoll)
             {
-                Vector3 force = carRigidbody.linearVelocity * _impactForceMultiplier;
-                Vector3 impactPoint = collision.contacts[0].point;
-                ActivateRagdoll(force, impactPoint);
+                // Opcional: tocar um som de "baque" leve e não fazer nada
+                return;
             }
+
+            // 2. CALCULAR A DIREÇÃO E FORÇA DO IMPACTO
+            Vector3 impactDirection = (carRigidbody.linearVelocity.normalized + (Vector3.up * _upwardForceComponent)).normalized;
+            float impactMagnitude = _baseImpactForce + (carSpeed * _speedToForceMultiplier);
+            Vector3 finalForce = impactDirection * impactMagnitude;
+
+            // Encontrar o ponto de impacto
+            Vector3 impactPoint = other.ClosestPoint(transform.position);
+
+            ActivateRagdoll(finalForce, impactPoint);
         }
     }
 

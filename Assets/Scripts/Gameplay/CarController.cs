@@ -47,6 +47,13 @@ public class CarController : MonoBehaviour
     [Header("Camera")]
     [SerializeField] private CinemachineThirdPersonFollow _carCamera;
 
+    [Header("Collision Feedback")]
+    [Tooltip("The tag used to identify enemies.")]
+    [SerializeField] private string _zombieTag = "Enemy";
+    [Tooltip("How much speed the car loses when hitting an enemy (e.g., 0.1 = 10% speed loss).")]
+    [Range(0, 1)]
+    [SerializeField] private float _speedLossPerHit = 0.1f;
+
     // Internal State
     private float _steeringInput = 0f;
     private float _accelerationInput = 0f;
@@ -226,6 +233,15 @@ public class CarController : MonoBehaviour
             {
                 wheel.Rotate(wheelRotation, 0, 0, Space.Self);
             }
+        }
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag(_zombieTag))
+        {
+            // Reduz a velocidade do carro em uma porcentagem definida
+            _rb.linearVelocity *= (1 - _speedLossPerHit);
         }
     }
 
