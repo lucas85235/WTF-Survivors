@@ -1,135 +1,173 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Events;
 
-/// <summary>
-/// Manages the spawning of enemy waves based on a list of WaveSO assets.
-/// It tracks the state of waves and notifies other systems via UnityEvents.
-/// </summary>
 public class WaveSpawner : MonoBehaviour
 {
-    // Enum to manage the spawner's state machine.
-    private enum SpawnerState { Idle, SpawningWave, WaitingForNextWave }
+    [SerializeField] private Transform playerTransform;
+    [SerializeField] private Transform[] customSpawnPoints = new Transform[0];
+    [SerializeField] private float spawnRadius = 5f;
+    [SerializeField] private float cameraViewDistance = 35f;
+    
+    [SerializeField] private float initialSpawnRate = 0.5f;
+    [SerializeField] private float maxSpawnRate = 0.1f;
+    [SerializeField] private float difficultyIncrement = 0.15f;
+    
+    [SerializeField] private int initialZombiesPerWave = 3;
+    [SerializeField] private int maxZombiesPerWave = 15;
+    
+    [SerializeField] private float waveDuration = 300f; // 5 minutos
+    
+    private float spawnTimer = 0f;
+    private float currentSpawnRate;
+    private float elapsedTime = 0f;
+    private float currentDifficulty = 1f;
+    private int currentWaveSize = 3;
+    private bool waveActive = true;
 
-    [Header("Wave Configuration")]
-    [Tooltip("A list of WaveSO assets that defines the sequence of enemy waves.")]
-    [SerializeField] private List<WaveSO> _waves;
-
-    [Header("Spawner Settings")]
-    [Tooltip("A list of points where enemies can be spawned.")]
-    [SerializeField] private Transform[] _spawnPoints;
-    [Tooltip("The time in seconds to wait between completing one wave and starting the next.")]
-    [SerializeField] private float _timeBetweenWaves = 5.0f;
-
-    [Header("Events")]
-    [Tooltip("Fired when a new wave starts. Passes the wave number (e.g., 1, 2, 3).")]
-    public UnityEvent<int> OnWaveStarted;
-    [Tooltip("Fired when all waves are successfully completed.")]
-    public UnityEvent OnAllWavesCompleted;
-
-    private int _currentWaveIndex = -1;
-    private int _enemiesRemainingAlive;
-    private float _nextWaveTimer;
-    private SpawnerState _currentState = SpawnerState.Idle;
+    private Camera mainCamera;
 
     private void Start()
     {
-        // Start the process
-        StartNextWave();
+        mainCamera = Camera.main;
+        currentSpawnRate = initialSpawnRate;
+        
+        if (customSpawnPoints.Length == 0)
+        {
+            Debug.LogWarning("Nenhum ponto de spawn foi definido! Adicione pontos ao array 'customSpawnPoints'");
+        }
     }
 
     private void Update()
     {
-        // State machine logic
-        if (_currentState == SpawnerState.WaitingForNextWave)
-        {
-            // If the wave is clear and we are waiting, start a countdown for the next one.
-            if (_enemiesRemainingAlive <= 0)
-            {
-                _nextWaveTimer -= Time.deltaTime;
-                if (_nextWaveTimer <= 0)
-                {
-                    StartNextWave();
-                }
-            }
-        }
-    }
+        if (!waveActive) return;
 
-    /// <summary>
-    /// Begins the next wave in the sequence.
-    /// </summary>
-    private void StartNextWave()
-    {
-        _currentWaveIndex++;
+        elapsedTime += Time.deltaTime;
 
-        if (_currentWaveIndex >= _waves.Count)
+        // Verifica se a wave terminou
+        if (elapsedTime >= waveDuration)
         {
-            // All waves are completed.
-            _currentState = SpawnerState.Idle;
-            Debug.Log("All waves completed!");
-            OnAllWavesCompleted?.Invoke();
+            EndWave();
             return;
         }
 
-        WaveSO currentWave = _waves[_currentWaveIndex];
-        _enemiesRemainingAlive = currentWave.EnemyCount;
-        _nextWaveTimer = _timeBetweenWaves;
-        _currentState = SpawnerState.SpawningWave;
+        // Aumenta dificuldade progressivamente
+        UpdateDifficulty();
 
-        Debug.Log($"Starting Wave {_currentWaveIndex + 1}...");
-        OnWaveStarted?.Invoke(_currentWaveIndex + 1);
-        StartCoroutine(SpawnWaveCoroutine(currentWave));
-    }
-
-    /// <summary>
-    /// Coroutine that handles spawning enemies over time based on the wave's properties.
-    /// </summary>
-    private IEnumerator SpawnWaveCoroutine(WaveSO wave)
-    {
-        if (_spawnPoints.Length == 0)
+        // Spawn de zumbis
+        spawnTimer += Time.deltaTime;
+        if (spawnTimer >= currentSpawnRate)
         {
-            Debug.LogError("No spawn points assigned to the WaveSpawner!");
-            yield break; // Stop the coroutine if there's nowhere to spawn enemies.
-        }
-
-        for (int i = 0; i < wave.EnemyCount; i++)
-        {
-            // Spawn one enemy.
-            SpawnEnemy(wave.EnemyPrefab);
-
-            // Wait for the specified time before spawning the next one.
-            yield return new WaitForSeconds(1f / wave.SpawnRate);
-        }
-
-        // After all enemies are spawned, transition to the waiting state.
-        _currentState = SpawnerState.WaitingForNextWave;
-    }
-
-    private void SpawnEnemy(GameObject enemyPrefab)
-    {
-        // Choose a random spawn point from the list.
-        Transform randomSpawnPoint = _spawnPoints[Random.Range(0, _spawnPoints.Length)];
-
-        // Instantiate the enemy.
-        GameObject enemyInstance = Instantiate(enemyPrefab, randomSpawnPoint.position, randomSpawnPoint.rotation);
-
-        // Subscribe to the enemy's death event.
-        Enemy enemyScript = enemyInstance.GetComponent<Enemy>();
-        if (enemyScript != null)
-        {
-            enemyScript.OnDeath += OnEnemyDied;
+            SpawnZombie();
+            spawnTimer = 0f;
         }
     }
 
-    /// <summary>
-    /// Callback method that is triggered when an enemy dies.
-    /// </summary>
-    private void OnEnemyDied(Enemy enemy)
+    private void UpdateDifficulty()
     {
-        _enemiesRemainingAlive--;
-
-        // Unsubscribe to prevent memory leaks.
-        enemy.OnDeath -= OnEnemyDied;
+        float progress = elapsedTime / waveDuration;
+        currentDifficulty = 1f + (progress * 2f); // De 1 para 3
+        
+        // Aumenta velocidade de spawn
+        currentSpawnRate = Mathf.Lerp(initialSpawnRate, maxSpawnRate, progress);
+        
+        // Aumenta quantidade de zumbis por onda
+        currentWaveSize = Mathf.RoundToInt(Mathf.Lerp(initialZombiesPerWave, maxZombiesPerWave, progress));
     }
+
+    private void SpawnZombie()
+    {
+        Vector3 spawnPos = GetValidSpawnPosition();
+        if (spawnPos != Vector3.zero)
+        {
+            ZombiePool.Instance.SpawnZombie(spawnPos, currentDifficulty);
+        }
+    }
+
+    private Vector3 GetValidSpawnPosition()
+    {
+        if (customSpawnPoints.Length == 0)
+            return Vector3.zero;
+
+        // Tenta encontrar um ponto de spawn válido
+        for (int attempts = 0; attempts < customSpawnPoints.Length; attempts++)
+        {
+            int randomIndex = Random.Range(0, customSpawnPoints.Length);
+            Transform spawnPoint = customSpawnPoints[randomIndex];
+            
+            if (spawnPoint == null) continue;
+
+            Vector3 spawnPos = spawnPoint.position;
+            spawnPos.y = GetGroundHeight(spawnPos);
+
+            if (!IsInViewFrustum(spawnPos))
+            {
+                return spawnPos;
+            }
+        }
+
+        return GetFarthestSpawnPoint();
+    }
+
+    private Vector3 GetFarthestSpawnPoint()
+    {
+        if (customSpawnPoints.Length == 0)
+            return Vector3.zero;
+
+        Transform farthestPoint = customSpawnPoints[0];
+        float maxDistance = 0f;
+
+        foreach (Transform point in customSpawnPoints)
+        {
+            if (point == null) continue;
+            
+            float distance = Vector3.Distance(playerTransform.position, point.position);
+            if (distance > maxDistance)
+            {
+                maxDistance = distance;
+                farthestPoint = point;
+            }
+        }
+
+        Vector3 spawnPos = farthestPoint.position + Random.insideUnitSphere * spawnRadius;
+        spawnPos.y = GetGroundHeight(spawnPos);
+        
+        return spawnPos;
+    }
+
+    private bool IsInViewFrustum(Vector3 position)
+    {
+        Vector3 screenPos = mainCamera.WorldToViewportPoint(position);
+        
+        // Dentro da câmera
+        if (screenPos.x > 0 && screenPos.x < 1 && screenPos.y > 0 && screenPos.y < 1 && screenPos.z > 0)
+        {
+            return true;
+        }
+
+        // Muito perto do player
+        if (Vector3.Distance(position, playerTransform.position) < cameraViewDistance)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private float GetGroundHeight(Vector3 position)
+    {
+        if (Physics.Raycast(position + Vector3.up * 100f, Vector3.down, out RaycastHit hit, 200f))
+        {
+            return hit.point.y;
+        }
+        return 0f;
+    }
+
+    private void EndWave()
+    {
+        waveActive = false;
+        Debug.Log($"Wave finalizada! Zumbis sobreviventes: {ZombiePool.Instance.GetActiveZombieCount()}");
+    }
+
+    public float GetTimeRemaining() => waveDuration - elapsedTime;
+    public float GetDifficulty() => currentDifficulty;
+    public bool IsWaveActive() => waveActive;
 }

@@ -14,7 +14,7 @@ public class EnemyAI : MonoBehaviour
     private Collider mainCollider;
 
     [Header("Movement")]
-    public float speed = 5f;
+    public float baseSpeed = 5f;
     public float stoppingDistance = 2f;
     public float updateInterval = 0.3f;
     public float rotationSpeed = 10f;
@@ -28,24 +28,53 @@ public class EnemyAI : MonoBehaviour
     public string carTag = "Car";
     public float impactForce = 50f;
     public float speedMultiplier = 2f;
-    public float ragdollCleanupTime = 10f;
 
     [Header("Animator Parameters")]
     public string moveSpeedParam = "MoveSpeed";
+    public string AnimationSpeed = "AnimationSpeed";
 
     private List<Rigidbody> ragdollBones = new List<Rigidbody>();
     private bool isRagdolled = false;
     private bool isPushed = false;
     private float nextUpdateTime = 0f;
+    private float currentDifficulty = 1f;
+    private float currentHealth = 30f;
+    private bool isInitialized = false;
+
+    public float Health => currentHealth;
+
+    void OnEnable()
+    {
+        if (!isInitialized)
+            return;
+
+        ResetEnemy();
+    }
 
     void Awake()
     {
-        player = GameObject.FindGameObjectWithTag("Player")?.transform;
         navMeshAgent = GetComponent<NavMeshAgent>();
         mainRigidbody = GetComponent<Rigidbody>();
         mainCollider = GetComponent<Collider>();
 
-        // Collect bone rigidbodies for ragdoll
+        if (animator == null)
+            animator = GetComponent<Animator>();
+
+        CollectRagdollBones();
+
+        if (navMeshAgent == null || mainRigidbody == null)
+        {
+            Debug.LogError("EnemyAIPooled: NavMeshAgent ou Rigidbody faltando em " + gameObject.name);
+            enabled = false;
+            return;
+        }
+
+        isInitialized = true;
+    }
+
+    void CollectRagdollBones()
+    {
+        ragdollBones.Clear();
         foreach (var rb in GetComponentsInChildren<Rigidbody>())
         {
             if (rb != mainRigidbody)
@@ -56,27 +85,106 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    void Start()
+    public void Initialize(Vector3 position, float difficulty)
     {
-        if (navMeshAgent == null || player == null || mainRigidbody == null)
+        player = GameObject.FindGameObjectWithTag("Player")?.transform;
+        
+        if (player == null)
         {
-            Debug.LogError("EnemyAI: Missing components on " + gameObject.name);
-            enabled = false;
+            Debug.LogError("Player não encontrado!");
             return;
         }
 
-        navMeshAgent.stoppingDistance = stoppingDistance;
-        navMeshAgent.speed = speed;
-        navMeshAgent.updateRotation = false;
-        navMeshAgent.updateUpAxis = false;
+        currentDifficulty = difficulty;
+        currentHealth = 30f * difficulty;
 
-        mainRigidbody.useGravity = true;
-        mainRigidbody.constraints = RigidbodyConstraints.FreezeRotation;
+        // Reseta posição e rotação
+        transform.position = position;
+        transform.rotation = Quaternion.identity;
+
+        // Reseta NavMesh Agent
+        if (navMeshAgent != null)
+        {
+            // navMeshAgent.enabled = false;
+            // navMeshAgent.enabled = true;
+            navMeshAgent.stoppingDistance = stoppingDistance;
+            navMeshAgent.speed = baseSpeed * (0.8f + difficulty * 0.2f);
+            navMeshAgent.updateRotation = false;
+            navMeshAgent.updateUpAxis = false;
+            // navMeshAgent.isStopped = false;
+            // navMeshAgent.updatePosition = true;
+        }
+
+        // Reseta Rigidbody principal
+        if (mainRigidbody != null)
+        {
+            mainRigidbody.useGravity = true;
+            mainRigidbody.isKinematic = false;
+            mainRigidbody.constraints = RigidbodyConstraints.FreezeRotation;
+            mainRigidbody.linearVelocity = Vector3.zero;
+            mainRigidbody.angularVelocity = Vector3.zero;
+        }
+
+        // Reseta collider principal
+        if (mainCollider != null)
+            mainCollider.enabled = true;
+
+        // Desativa ragdoll
+        isRagdolled = false;
+        isPushed = false;
+        nextUpdateTime = 0f;
+
+        foreach (var bone in ragdollBones)
+        {
+            bone.isKinematic = true;
+            bone.linearVelocity = Vector3.zero;
+            bone.angularVelocity = Vector3.zero;
+        }
+
+        // Reseta animator
+        if (animator != null)
+        {
+            animator.enabled = true;
+            animator.SetFloat(moveSpeedParam, 0f);
+        }
+
+        StopAllCoroutines();
+    }
+
+    private void ResetEnemy()
+    {
+        if (isRagdolled)
+        {
+            isRagdolled = false;
+            isPushed = false;
+
+            if (navMeshAgent != null)
+                navMeshAgent.enabled = true;
+
+            if (animator != null)
+                animator.enabled = true;
+
+            if (mainCollider != null)
+                mainCollider.enabled = true;
+
+            if (mainRigidbody != null)
+                mainRigidbody.isKinematic = false;
+
+            foreach (var bone in ragdollBones)
+            {
+                bone.isKinematic = true;
+                bone.linearVelocity = Vector3.zero;
+                bone.angularVelocity = Vector3.zero;
+            }
+        }
     }
 
     void Update()
     {
         if (isRagdolled || player == null || navMeshAgent == null)
+            return;
+
+        if (!navMeshAgent.isOnNavMesh)
             return;
 
         // Chase the player
@@ -119,6 +227,7 @@ public class EnemyAI : MonoBehaviour
             currentSpeed = navMeshAgent.desiredVelocity.magnitude;
 
         animator.SetFloat(moveSpeedParam, currentSpeed);
+        animator.SetFloat(AnimationSpeed, baseSpeed * currentDifficulty);
     }
 
     void DetectCarPush()
@@ -138,7 +247,6 @@ public class EnemyAI : MonoBehaviour
 
                 float carSpeed = carRb.linearVelocity.magnitude;
 
-                // If high speed -> ragdoll
                 if (carSpeed >= minRagdollSpeed)
                 {
                     Vector3 impactDirection = carRb.linearVelocity.normalized + Vector3.up * 0.5f;
@@ -150,7 +258,6 @@ public class EnemyAI : MonoBehaviour
                     return;
                 }
 
-                // Low speed -> simple push
                 PushEnemy(col, carSpeed);
                 return;
             }
@@ -159,6 +266,8 @@ public class EnemyAI : MonoBehaviour
 
     void PushEnemy(Collider col, float carSpeed)
     {
+        if (navMeshAgent == null || mainRigidbody == null) return;
+
         navMeshAgent.isStopped = true;
         navMeshAgent.updatePosition = false;
 
@@ -184,16 +293,23 @@ public class EnemyAI : MonoBehaviour
             yield return new WaitForSeconds(0.05f);
         }
 
-        mainRigidbody.linearVelocity = Vector3.zero;
-        mainRigidbody.isKinematic = true;
+        if (mainRigidbody != null)
+        {
+            mainRigidbody.linearVelocity = Vector3.zero;
+            mainRigidbody.isKinematic = true;
+        }
 
-        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2f, NavMesh.AllAreas))
+        if (navMeshAgent != null && NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2f, NavMesh.AllAreas))
         {
             navMeshAgent.Warp(hit.position);
         }
 
-        navMeshAgent.updatePosition = true;
-        navMeshAgent.isStopped = false;
+        if (navMeshAgent != null)
+        {
+            navMeshAgent.updatePosition = true;
+            navMeshAgent.isStopped = false;
+        }
+
         isPushed = false;
     }
 
@@ -202,18 +318,27 @@ public class EnemyAI : MonoBehaviour
         if (isRagdolled) return;
         isRagdolled = true;
 
-        navMeshAgent.enabled = false;
-        if (animator) animator.enabled = false;
-        mainCollider.enabled = false;
-        mainRigidbody.isKinematic = true;
+        if (navMeshAgent != null)
+            navMeshAgent.enabled = false;
 
-        // Enable bones and apply force at the closest bone
+        if (animator != null)
+            animator.enabled = false;
+
+        if (mainCollider != null)
+            mainCollider.enabled = false;
+
+        if (mainRigidbody != null)
+            mainRigidbody.isKinematic = true;
+
         Rigidbody closestBone = null;
         float smallestDist = float.MaxValue;
 
         foreach (var bone in ragdollBones)
         {
             bone.isKinematic = false;
+            bone.linearVelocity = Vector3.zero;
+            bone.angularVelocity = Vector3.zero;
+            
             float dist = Vector3.Distance(bone.position, impactPoint);
             if (dist < smallestDist)
             {
@@ -225,13 +350,13 @@ public class EnemyAI : MonoBehaviour
         if (closestBone != null)
             closestBone.AddForceAtPosition(force, impactPoint, ForceMode.Impulse);
 
-        StartCoroutine(CleanupRagdoll());
+        StartCoroutine(ReturnToPool());
     }
 
-    IEnumerator CleanupRagdoll()
+    IEnumerator ReturnToPool()
     {
-        yield return new WaitForSeconds(ragdollCleanupTime);
-        Destroy(gameObject);
+        yield return new WaitForSeconds(3f);
+        ZombiePool.Instance.ReturnZombie(this);
     }
 
     void OnTriggerEnter(Collider other)
@@ -254,6 +379,15 @@ public class EnemyAI : MonoBehaviour
 
                 ActivateRagdoll(finalForce, impactPoint);
             }
+        }
+    }
+
+    public void TakeDamage(float damage)
+    {
+        currentHealth -= damage;
+        if (currentHealth <= 0)
+        {
+            ZombiePool.Instance.ReturnZombie(this);
         }
     }
 
