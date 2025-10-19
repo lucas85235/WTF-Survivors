@@ -5970,26 +5970,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 962d3983714b732419ec2c26d35f2b07, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  player: {fileID: 683604927}
+  player: {fileID: 0}
   animator: {fileID: 0}
-  baseSpeed: 5
-  maxSpeed: 7
-  stoppingDistance: 2
-  pathUpdateInterval: 0.3
-  obstacleDetectYOffset: 0.5
-  obstacleDetectRadius: 1.5
-  pushDetectYOffset: 0.3
-  pushDetectRadius: 0.5
-  pushForce: 1
-  minPushTime: 0.3
-  minNavMeshSpeed: 0.1
-  navMeshRecoveryTime: 0.6
-  vehicleTag: Car
-  minSpeedToRagdoll: 5
-  baseImpactForce: 50
-  upwardForceComponent: 0.5
-  speedToForceMultiplier: 2
-  ragdollCleanupTime: 10
+  velocidade: 5
+  distanciaParada: 2
+  intervaloAtualizacao: 0.3
+  raioDeteccao: 2.5
+  forcaEmpurrao: 25
+  minVelocidadeRagdoll: 5
+  tagCarro: Car
+  forcaImpacto: 50
+  multiplicadorVelocidade: 2
+  tempoLimpezaRagdoll: 10
 --- !u!136 &2021760340
 CapsuleCollider:
   m_ObjectHideFlags: 0
