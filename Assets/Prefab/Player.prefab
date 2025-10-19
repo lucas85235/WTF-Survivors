@@ -272,6 +272,7 @@ GameObject:
   - component: {fileID: 7915953787608125628}
   - component: {fileID: 6251296853778905630}
   - component: {fileID: 5826279214026256132}
+  - component: {fileID: 6870547617349925414}
   m_Layer: 6
   m_Name: Player
   m_TagString: Player
@@ -295,6 +296,8 @@ Transform:
   - {fileID: 5419818137732048716}
   - {fileID: 1961334300494743749}
   - {fileID: 4766882148536173576}
+  - {fileID: 4297151652476362087}
+  - {fileID: 4137437840744438553}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &7915953787608125628
@@ -407,6 +410,39 @@ MonoBehaviour:
   _carCamera: {fileID: 0}
   _zombieTag: Enemy
   _speedLossPerHit: 0.1
+--- !u!114 &6870547617349925414
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 599633049646352319}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1b6e025a5fe2cd345a8d07bc4d3c509a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _maxHealth: 100
+  _healthSlider: {fileID: 0}
+  _fillImage: {fileID: 0}
+  _damageColor: {r: 1, g: 0, b: 0, a: 1}
+  _animationDuration: 0.2
+  _scaleMultiplier: 1.05
+  OnPlayerDied:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: UnityEngine.GameObject, UnityEngine
+        m_MethodName: SetActive
+        m_Mode: 6
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 1
+        m_CallState: 2
 --- !u!1 &971980914285465187
 GameObject:
   m_ObjectHideFlags: 0
@@ -3038,6 +3074,56 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1 &4842377213458355279
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4137437840744438553}
+  - component: {fileID: 6204718408374182884}
+  m_Layer: 6
+  m_Name: AutoShooter
+  m_TagString: Untagged
+  m_Icon: {fileID: 3443629218296621865, guid: 0000000000000000d000000000000000, type: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4137437840744438553
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4842377213458355279}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0.773, y: 1.137, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 9198182173780949265}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!114 &6204718408374182884
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4842377213458355279}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e31cb807adf9a554e81858c46c7c60f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  attackRange: 20
+  fireRate: 1
+  fireAngle: 160
+  enemyTag: Enemy
+  bulletPrefab: {fileID: 7202058339049729543, guid: 0f04dda50f37f234bb13a5465bd7a1e1, type: 3}
+  firePoint: {fileID: 4137437840744438553}
 --- !u!1 &4870330551086965137
 GameObject:
   m_ObjectHideFlags: 0
@@ -4019,6 +4105,56 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1 &6688065099581146379
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4297151652476362087}
+  - component: {fileID: 5035622208166922909}
+  m_Layer: 6
+  m_Name: AutoShooter
+  m_TagString: Untagged
+  m_Icon: {fileID: 3443629218296621865, guid: 0000000000000000d000000000000000, type: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4297151652476362087
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6688065099581146379}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: -0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: -0.773, y: 1.137, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 9198182173780949265}
+  m_LocalEulerAnglesHint: {x: 0, y: -90, z: 0}
+--- !u!114 &5035622208166922909
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6688065099581146379}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e31cb807adf9a554e81858c46c7c60f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  attackRange: 20
+  fireRate: 1
+  fireAngle: 160
+  enemyTag: Enemy
+  bulletPrefab: {fileID: 7202058339049729543, guid: 0f04dda50f37f234bb13a5465bd7a1e1, type: 3}
+  firePoint: {fileID: 4297151652476362087}
 --- !u!1 &6852686342827548501
 GameObject:
   m_ObjectHideFlags: 0

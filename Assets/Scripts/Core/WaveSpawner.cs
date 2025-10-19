@@ -1,7 +1,11 @@
 using UnityEngine;
+using TMPro;
+using UnityEngine.Events;
 
 public class WaveSpawner : MonoBehaviour
 {
+    [Header("References")]
+    [SerializeField] private TMP_Text durationText;
     [SerializeField] private Transform playerTransform;
     [SerializeField] private Transform[] customSpawnPoints = new Transform[0];
     [SerializeField] private float spawnRadius = 5f;
@@ -13,9 +17,12 @@ public class WaveSpawner : MonoBehaviour
     
     [SerializeField] private int initialZombiesPerWave = 3;
     [SerializeField] private int maxZombiesPerWave = 15;
-    
+
     [SerializeField] private float waveDuration = 300f; // 5 minutos
     
+    [Header("Events")]
+    public UnityEvent OnWaveEnded;
+
     private float spawnTimer = 0f;
     private float currentSpawnRate;
     private float elapsedTime = 0f;
@@ -48,6 +55,10 @@ public class WaveSpawner : MonoBehaviour
             EndWave();
             return;
         }
+
+        int currentTime = Mathf.CeilToInt(waveDuration - elapsedTime);
+        int toMinutes = currentTime / 60;
+        durationText.text = toMinutes.ToString("00") + ":" + (currentTime - toMinutes * 60).ToString("00");
 
         // Aumenta dificuldade progressivamente
         UpdateDifficulty();
@@ -164,7 +175,13 @@ public class WaveSpawner : MonoBehaviour
     private void EndWave()
     {
         waveActive = false;
-        Debug.Log($"Wave finalizada! Zumbis sobreviventes: {ZombiePool.Instance.GetActiveZombieCount()}");
+        Invoke(nameof(OnWaveEndedEvent), 1f);
+        Debug.Log($"Wave finished! Surviving zombies: {ZombiePool.Instance.GetActiveZombieCount()}");
+    }
+
+    private void OnWaveEndedEvent()
+    {
+        OnWaveEnded?.Invoke();
     }
 
     public float GetTimeRemaining() => waveDuration - elapsedTime;

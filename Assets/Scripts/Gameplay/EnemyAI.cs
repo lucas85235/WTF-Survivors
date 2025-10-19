@@ -7,33 +7,34 @@ using UnityEngine.AI;
 public class EnemyAI : MonoBehaviour
 {
     [Header("References")]
-    public Transform player;
-    public Animator animator;
-    private NavMeshAgent navMeshAgent;
-    private Rigidbody mainRigidbody;
-    private Collider mainCollider;
+    [SerializeField] private Animator animator;
+    [SerializeField] private NavMeshAgent navMeshAgent;
+    [SerializeField] private Rigidbody mainRigidbody;
+    [SerializeField] private Collider mainCollider;
 
     [Header("Movement")]
-    public float baseSpeed = 5f;
-    public float stoppingDistance = 2f;
-    public float updateInterval = 0.3f;
-    public float rotationSpeed = 10f;
+    [SerializeField] private float baseSpeed = 5f;
+    [SerializeField] private float stoppingDistance = 2f;
+    [SerializeField] private float updateInterval = 0.3f;
+    [SerializeField] private float rotationSpeed = 10f;
 
     [Header("Car Detection")]
-    public float detectionRadius = 2.5f;
-    public float pushForce = 25f;
-    public float minRagdollSpeed = 5f;
+    [SerializeField] private float detectionRadius = 2.5f;
+    [SerializeField] private float pushForce = 25f;
+    [SerializeField] private float minRagdollSpeed = 5f;
 
     [Header("Ragdoll")]
-    public string carTag = "Car";
-    public float impactForce = 50f;
-    public float speedMultiplier = 2f;
+    [SerializeField] private string playerTag = "Player";
+    [SerializeField] private float impactForce = 50f;
+    [SerializeField] private float speedMultiplier = 2f;
 
     [Header("Animator Parameters")]
-    public string moveSpeedParam = "MoveSpeed";
-    public string AnimationSpeed = "AnimationSpeed";
+    [SerializeField] private string moveSpeedParam = "MoveSpeed";
+    [SerializeField] private string AnimationSpeed = "AnimationSpeed";
 
     private List<Rigidbody> ragdollBones = new List<Rigidbody>();
+    private Transform player;
+    private PlayerHealth playerHealth;
     private bool isRagdolled = false;
     private bool isPushed = false;
     private float nextUpdateTime = 0f;
@@ -47,6 +48,9 @@ public class EnemyAI : MonoBehaviour
     {
         if (!isInitialized)
             return;
+
+        if (navMeshAgent != null)
+            navMeshAgent.enabled = true;
 
         ResetEnemy();
     }
@@ -88,34 +92,32 @@ public class EnemyAI : MonoBehaviour
     public void Initialize(Vector3 position, float difficulty)
     {
         player = GameObject.FindGameObjectWithTag("Player")?.transform;
-        
+
         if (player == null)
         {
-            Debug.LogError("Player não encontrado!");
+            Debug.LogWarning("Player not found!");
             return;
         }
+        
+        playerHealth = player.GetComponent<PlayerHealth>();
 
         currentDifficulty = difficulty;
         currentHealth = 30f * difficulty;
 
-        // Reseta posição e rotação
+        // Reset position and rotation
         transform.position = position;
         transform.rotation = Quaternion.identity;
 
-        // Reseta NavMesh Agent
+        // Reset NavMesh Agent
         if (navMeshAgent != null)
         {
-            // navMeshAgent.enabled = false;
-            // navMeshAgent.enabled = true;
             navMeshAgent.stoppingDistance = stoppingDistance;
             navMeshAgent.speed = baseSpeed * (0.8f + difficulty * 0.2f);
             navMeshAgent.updateRotation = false;
             navMeshAgent.updateUpAxis = false;
-            // navMeshAgent.isStopped = false;
-            // navMeshAgent.updatePosition = true;
         }
 
-        // Reseta Rigidbody principal
+        // Reset Rigidbody
         if (mainRigidbody != null)
         {
             mainRigidbody.useGravity = true;
@@ -125,11 +127,10 @@ public class EnemyAI : MonoBehaviour
             mainRigidbody.angularVelocity = Vector3.zero;
         }
 
-        // Reseta collider principal
         if (mainCollider != null)
             mainCollider.enabled = true;
 
-        // Desativa ragdoll
+        // Disable ragdoll
         isRagdolled = false;
         isPushed = false;
         nextUpdateTime = 0f;
@@ -141,7 +142,6 @@ public class EnemyAI : MonoBehaviour
             bone.angularVelocity = Vector3.zero;
         }
 
-        // Reseta animator
         if (animator != null)
         {
             animator.enabled = true;
@@ -240,7 +240,7 @@ public class EnemyAI : MonoBehaviour
 
         foreach (Collider col in colliders)
         {
-            if (col.CompareTag(carTag))
+            if (col.CompareTag(playerTag))
             {
                 Rigidbody carRb = col.attachedRigidbody;
                 if (carRb == null) continue;
@@ -257,6 +257,10 @@ public class EnemyAI : MonoBehaviour
                     ActivateRagdoll(finalForce, impactPoint);
                     return;
                 }
+                else
+                {
+                    playerHealth?.TakeDamage(1);
+                } 
 
                 PushEnemy(col, carSpeed);
                 return;
@@ -363,7 +367,7 @@ public class EnemyAI : MonoBehaviour
     {
         if (isRagdolled) return;
 
-        if (other.CompareTag(carTag))
+        if (other.CompareTag(playerTag))
         {
             Rigidbody carRb = other.attachedRigidbody;
             if (carRb == null) return;
@@ -379,6 +383,12 @@ public class EnemyAI : MonoBehaviour
 
                 ActivateRagdoll(finalForce, impactPoint);
             }
+        }
+
+        if (other.CompareTag("Bullet"))
+        {
+            ActivateRagdoll(other.transform.forward * 10f, other.ClosestPoint(transform.position));
+            Destroy(other.gameObject);
         }
     }
 

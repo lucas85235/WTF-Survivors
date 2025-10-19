@@ -13,7 +13,6 @@ GameObject:
   - component: {fileID: 3168569336602489233}
   - component: {fileID: 2706292005938212196}
   - component: {fileID: 6579465567219743353}
-  - component: {fileID: -1895665413599946430}
   m_Layer: 7
   m_Name: Zombie
   m_TagString: Enemy
@@ -121,33 +120,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 962d3983714b732419ec2c26d35f2b07, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  player: {fileID: 0}
   animator: {fileID: 1704527302225386830}
-  speed: 5
+  baseSpeed: 5
   stoppingDistance: 2
   updateInterval: 0.3
   rotationSpeed: 10
   detectionRadius: 1
   pushForce: 2
   minRagdollSpeed: 5
-  carTag: Player
+  playerTag: Player
   impactForce: 50
   speedMultiplier: 2
-  ragdollCleanupTime: 10
   moveSpeedParam: MoveSpeed
---- !u!114 &-1895665413599946430
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8640020499120940841}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6e45ac0fb1ebbd34791600a81f7799f6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  baseHealth: 30
+  AnimationSpeed: AnimationSpeed
 --- !u!1001 &1653915272705354184
 PrefabInstance:
   m_ObjectHideFlags: 0
