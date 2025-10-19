@@ -1,5 +1,6 @@
 using UnityEngine;
 
+[RequireComponent(typeof(AudioSource))]
 public class AutoShooter : MonoBehaviour
 {
     [Header("Atributos de Ataque")]
@@ -12,6 +13,14 @@ public class AutoShooter : MonoBehaviour
     [SerializeField] private string enemyTag = "Enemy";
     [SerializeField] private GameObject bulletPrefab;
     [SerializeField] private Transform firePoint;
+
+    [Header("Audio")]
+    [SerializeField] private AudioSource sfxSource;
+    [SerializeField] private AudioClip[] shootClips;
+    [Range(0f, 0.5f)]
+    [SerializeField] private float pitchVariance = 0.08f;
+    [Range(0f, 1f)]
+    [SerializeField] private float sfxVolume = 1f;
 
     private Collider targetCollider;
     private float fireCountdown = 0f;
@@ -80,7 +89,19 @@ public class AutoShooter : MonoBehaviour
             Vector3 directionToTarget = (targetCollider.bounds.center - firePoint.position).normalized;
             Quaternion bulletRotation = Quaternion.LookRotation(directionToTarget);
             Instantiate(bulletPrefab, firePoint.position, bulletRotation);
+            PlayLocalOneShot(shootClips, sfxVolume);
         }
+    }
+
+    private void PlayLocalOneShot(AudioClip[] clips, float volume = -1f)
+    {
+        if (clips == null || clips.Length == 0 || sfxSource == null) return;
+        AudioClip clip = clips[Random.Range(0, clips.Length)];
+        float vol = (volume < 0f) ? sfxVolume : volume;
+        float prevPitch = sfxSource.pitch;
+        sfxSource.pitch = Random.Range(1f - pitchVariance, 1f + pitchVariance);
+        sfxSource.PlayOneShot(clip, vol);
+        sfxSource.pitch = prevPitch;
     }
 
     private void OnDrawGizmosSelected()

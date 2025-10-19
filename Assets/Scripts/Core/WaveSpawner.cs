@@ -18,7 +18,7 @@ public class WaveSpawner : MonoBehaviour
     [SerializeField] private int initialZombiesPerWave = 3;
     [SerializeField] private int maxZombiesPerWave = 15;
 
-    [SerializeField] private float waveDuration = 300f; // 5 minutos
+    [SerializeField] private float waveDuration = 300f;
     
     [Header("Events")]
     public UnityEvent OnWaveEnded;
@@ -49,7 +49,6 @@ public class WaveSpawner : MonoBehaviour
 
         elapsedTime += Time.deltaTime;
 
-        // Verifica se a wave terminou
         if (elapsedTime >= waveDuration)
         {
             EndWave();
@@ -60,10 +59,8 @@ public class WaveSpawner : MonoBehaviour
         int toMinutes = currentTime / 60;
         durationText.text = toMinutes.ToString("00") + ":" + (currentTime - toMinutes * 60).ToString("00");
 
-        // Aumenta dificuldade progressivamente
         UpdateDifficulty();
 
-        // Spawn de zumbis
         spawnTimer += Time.deltaTime;
         if (spawnTimer >= currentSpawnRate)
         {
@@ -75,12 +72,8 @@ public class WaveSpawner : MonoBehaviour
     private void UpdateDifficulty()
     {
         float progress = elapsedTime / waveDuration;
-        currentDifficulty = 1f + (progress * 2f); // De 1 para 3
-        
-        // Aumenta velocidade de spawn
+        currentDifficulty = 1f + (progress * 2f);
         currentSpawnRate = Mathf.Lerp(initialSpawnRate, maxSpawnRate, progress);
-        
-        // Aumenta quantidade de zumbis por onda
         currentWaveSize = Mathf.RoundToInt(Mathf.Lerp(initialZombiesPerWave, maxZombiesPerWave, progress));
     }
 
@@ -98,7 +91,7 @@ public class WaveSpawner : MonoBehaviour
         if (customSpawnPoints.Length == 0)
             return Vector3.zero;
 
-        // Tenta encontrar um ponto de spawn válido
+        // Try to find a spawn point not in view
         for (int attempts = 0; attempts < customSpawnPoints.Length; attempts++)
         {
             int randomIndex = Random.Range(0, customSpawnPoints.Length);
@@ -148,13 +141,13 @@ public class WaveSpawner : MonoBehaviour
     {
         Vector3 screenPos = mainCamera.WorldToViewportPoint(position);
         
-        // Dentro da câmera
+        // Inside camera view
         if (screenPos.x > 0 && screenPos.x < 1 && screenPos.y > 0 && screenPos.y < 1 && screenPos.z > 0)
         {
             return true;
         }
 
-        // Muito perto do player
+        // Really close to player
         if (Vector3.Distance(position, playerTransform.position) < cameraViewDistance)
         {
             return true;

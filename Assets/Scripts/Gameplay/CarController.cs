@@ -5,8 +5,10 @@ using Unity.Cinemachine;
 /// <summary>
 /// An arcade-style car controller using Rigidbody velocity for stable physics.
 /// Features distinct acceleration, deceleration, braking, and a functional drift mechanic.
+/// Audio: engine loop, accel/blip, brake, skid (loop), collision impacts.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(AudioSource))]
 public class CarController : MonoBehaviour
 {
     [Header("Movement Settings")]
@@ -54,6 +56,49 @@ public class CarController : MonoBehaviour
     [Range(0, 1)]
     [SerializeField] private float _speedLossPerHit = 0.1f;
 
+    #region Audio (SFX)
+
+    [Header("Audio - General")]
+    [Tooltip("Main SFX source. Used for engine loop and one-shot non-positional sounds.")]
+    [SerializeField] private AudioSource _sfxSource;
+
+    [Tooltip("Optional audio source used for a positional/looping skid sound")]
+    [SerializeField] private AudioSource _skidSource;
+
+    [Tooltip("Engine loop clip (single). Will loop on _sfxSource.")]
+    [SerializeField] private AudioClip _engineLoopClip;
+
+    [Tooltip("Small blip / rev sounds when pressing accelerate")]
+    [SerializeField] private AudioClip[] _accelClips;
+
+    [Tooltip("Brake one-shot clips")]
+    [SerializeField] private AudioClip[] _brakeClips;
+
+    [Tooltip("Skid start one-shot (played when drift starts)")]
+    [SerializeField] private AudioClip[] _skidStartClips;
+
+    [Tooltip("Loop clip for skid (if provided) - assigned to _skidSource.clip and looped)")]
+    [SerializeField] private AudioClip _skidLoopClip;
+
+    [Tooltip("Collision impact sounds (played at contact point)")]
+    [SerializeField] private AudioClip[] _collisionClips;
+
+    [Tooltip("Optional zombie hit sounds (played at contact point)")]
+    [SerializeField] private AudioClip[] _zombieHitClips;
+
+    [Header("Audio Settings")]
+    [Range(0f, 1f)]
+    [SerializeField] private float _sfxVolume = 1f;
+    [SerializeField] private float _enginePitchRange = 0.8f; // added on top of base pitch (0..1)
+    [Range(0f, 0.2f)]
+    [SerializeField] private float _pitchVariance = 0.06f;
+    [Tooltip("Minimum forward speed for squeal logic")]
+    [SerializeField] private float _squealSpeedThreshold = 8f;
+    [Tooltip("Angle (abs steering) above which we consider a squeal/strong turn")]
+    [SerializeField] private float _squealSteerThreshold = 0.6f;
+
+    #endregion
+
     // Internal State
     private float _steeringInput = 0f;
     private float _accelerationInput = 0f;
@@ -65,12 +110,52 @@ public class CarController : MonoBehaviour
     private InputSystem_Actions _inputActions;
     private Rigidbody _rb;
 
+    // audio state trackers to avoid repeating sounds
+    private float _prevAccelerationInput = 0f;
+    private bool _prevIsBraking = false;
+    private bool _prevIsDrifting = false;
+    private bool _isSkidLooping = false;
+    private bool _prevSquealPlayed = false;
+
     #region Unity Lifecycle & Input
 
     private void Awake()
     {
         _inputActions = new InputSystem_Actions();
         _rb = GetComponent<Rigidbody>();
+
+        // ensure main sfx source exists
+        if (_sfxSource == null)
+        {
+            _sfxSource = GetComponent<AudioSource>();
+            if (_sfxSource == null)
+                _sfxSource = gameObject.AddComponent<AudioSource>();
+        }
+        // default: engine loop is non-positional 2D (spatialBlend = 0). If you want the engine to be 3D, change to 1.
+        _sfxSource.spatialBlend = 0f;
+        _sfxSource.loop = false; // we'll manage engine loop manually below
+
+        // optionally create skid source for looped positional skid
+        if (_skidSource == null && _skidLoopClip != null)
+        {
+            GameObject skidObj = new GameObject("SkidSource");
+            skidObj.transform.SetParent(transform, false);
+            _skidSource = skidObj.AddComponent<AudioSource>();
+            _skidSource.loop = true;
+            _skidSource.spatialBlend = 1f; // 3D so skid follows the car position
+            _skidSource.playOnAwake = false;
+            _skidSource.clip = _skidLoopClip;
+        }
+
+        // start engine loop if provided (we will modulate pitch)
+        if (_engineLoopClip != null)
+        {
+            _sfxSource.clip = _engineLoopClip;
+            _sfxSource.loop = true;
+            _sfxSource.volume = _sfxVolume * 0.8f;
+            _sfxSource.pitch = 1f;
+            _sfxSource.Play();
+        }
     }
 
     private void OnEnable()
@@ -103,6 +188,12 @@ public class CarController : MonoBehaviour
     {
         UpdateWheels();
         CameraSide();
+
+        // Update engine pitch based on forward speed
+        UpdateEnginePitch();
+
+        // Handle squeal logic (turning hard at high speed)
+        HandleSqueal();
     }
 
     private void FixedUpdate()
@@ -110,6 +201,9 @@ public class CarController : MonoBehaviour
         ProcessMovement();
         ProcessSteering();
         ApplySidewaysGrip();
+
+        // audio event checks for accel/brake/drift transitions
+        HandleAudioStateTransitions();
     }
 
     #endregion
@@ -128,7 +222,6 @@ public class CarController : MonoBehaviour
     private void ProcessMovement()
     {
         // Get the current speed along the car's forward direction.
-        // Dot product gives us this: positive is forward, negative is reverse.
         float currentForwardSpeed = Vector3.Dot(transform.forward, _rb.linearVelocity);
 
         // Determine the target speed based on player input.
@@ -240,9 +333,129 @@ public class CarController : MonoBehaviour
     {
         if (other.CompareTag(_zombieTag))
         {
-            // Reduz a velocidade do carro em uma porcentagem definida
+            // Reduce car speed by a configured percentage
             _rb.linearVelocity *= (1 - _speedLossPerHit);
+
+            // // Play collision impact at contact point (positional)
+            // Vector3 contactPoint = other.ClosestPoint(transform.position);
+            // PlayImpactAtPoint(_collisionClips, contactPoint, 1f);
+
+            // // Play zombie hit sound at contact point (optional)
+            // PlayImpactAtPoint(_zombieHitClips, contactPoint, 0.9f);
         }
+        else
+        {
+            // Play general collision impact sound at contact point
+            Vector3 contactPoint = other.ClosestPoint(transform.position);
+            PlayImpactAtPoint(_collisionClips, contactPoint, 1.0f);
+        }
+    }
+
+    #endregion
+
+    #region Audio Helpers & State Handling
+
+    private void UpdateEnginePitch()
+    {
+        if (_sfxSource == null || _engineLoopClip == null) return;
+
+        // Use forward speed to modulate pitch
+        float forwardSpeed = Mathf.Abs(Vector3.Dot(transform.forward, _rb.linearVelocity));
+        float speedNormalized = Mathf.Clamp01(forwardSpeed / _maxForwardSpeed);
+        float targetPitch = 1f + (_enginePitchRange * speedNormalized);
+        // small randomized variance for realism
+        float varied = Random.Range(1f - _pitchVariance, 1f + _pitchVariance);
+        _sfxSource.pitch = targetPitch * varied;
+    }
+
+    private void HandleSqueal()
+    {
+        // Play a one-shot squeal when turning hard at speed (prevent flood with prev flag)
+        float forwardSpeed = Mathf.Abs(Vector3.Dot(transform.forward, _rb.linearVelocity));
+        bool shouldSqueal = forwardSpeed > _squealSpeedThreshold && Mathf.Abs(_steeringInput) > _squealSteerThreshold;
+
+        if (shouldSqueal && !_prevSquealPlayed)
+        {
+            // reuse accelClips as possible squeal alternatives if left empty; otherwise no-op
+            PlayLocalOneShot(_accelClips, 1.0f);
+            _prevSquealPlayed = true;
+        }
+        else if (!shouldSqueal)
+        {
+            _prevSquealPlayed = false;
+        }
+    }
+
+    private void HandleAudioStateTransitions()
+    {
+        // Acceleration press start
+        if (_accelerationInput > 0.1f && _prevAccelerationInput <= 0.1f)
+        {
+            PlayLocalOneShot(_accelClips);
+        }
+
+        // Brake pressed start
+        if (_isBraking && !_prevIsBraking)
+        {
+            PlayLocalOneShot(_brakeClips);
+        }
+
+        // Drift start
+        if (_isDrifting && !_prevIsDrifting)
+        {
+            PlayLocalOneShot(_skidStartClips);
+            StartSkidLoop();
+        }
+
+        // Drift end
+        if (!_isDrifting && _prevIsDrifting)
+        {
+            StopSkidLoop();
+        }
+
+        // store previous states for next check
+        _prevAccelerationInput = _accelerationInput;
+        _prevIsBraking = _isBraking;
+        _prevIsDrifting = _isDrifting;
+    }
+
+    private void StartSkidLoop()
+    {
+        if (_skidSource == null || _skidLoopClip == null) return;
+        if (!_isSkidLooping)
+        {
+            _skidSource.volume = _sfxVolume;
+            _skidSource.pitch = 1f + Random.Range(-_pitchVariance, _pitchVariance);
+            _skidSource.Play();
+            _isSkidLooping = true;
+        }
+    }
+
+    private void StopSkidLoop()
+    {
+        if (_skidSource == null || !_isSkidLooping) return;
+        _skidSource.Stop();
+        _isSkidLooping = false;
+    }
+
+    // plays a random clip from array on the local sfxSource (non-positional)
+    private void PlayLocalOneShot(AudioClip[] clips, float volume = -1f)
+    {
+        if (clips == null || clips.Length == 0 || _sfxSource == null) return;
+        AudioClip clip = clips[Random.Range(0, clips.Length)];
+        float vol = (volume < 0f) ? _sfxVolume : volume;
+        float prevPitch = _sfxSource.pitch;
+        _sfxSource.pitch = Random.Range(1f - _pitchVariance, 1f + _pitchVariance);
+        _sfxSource.PlayOneShot(clip, vol);
+        _sfxSource.pitch = prevPitch;
+    }
+
+    // plays a random clip at world position (spatial). uses built-in PlayClipAtPoint (no pitch variance).
+    private void PlayImpactAtPoint(AudioClip[] clips, Vector3 point, float volume = 1f)
+    {
+        if (clips == null || clips.Length == 0) return;
+        AudioClip clip = clips[Random.Range(0, clips.Length)];
+        AudioSource.PlayClipAtPoint(clip, point, Mathf.Clamp01(volume * _sfxVolume));
     }
 
     #endregion

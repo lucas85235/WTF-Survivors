@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent))]
+[RequireComponent(typeof(AudioSource))]
 public class EnemyAI : MonoBehaviour
 {
     [Header("References")]
@@ -31,6 +32,22 @@ public class EnemyAI : MonoBehaviour
     [Header("Animator Parameters")]
     [SerializeField] private string moveSpeedParam = "MoveSpeed";
     [SerializeField] private string AnimationSpeed = "AnimationSpeed";
+
+    [Header("Audio")]
+    [Tooltip("SFX source for non-spatial or localized sounds")]
+    [SerializeField] private AudioSource sfxSource;
+    [Tooltip("Clips used for hard impacts (cars) - played at impact point")]
+    [SerializeField] private AudioClip[] impactClips;
+    [Tooltip("Clips for light hits / pushes")]
+    [SerializeField] private AudioClip[] pushClips;
+    [Tooltip("Zombie hurt / grunt variations")]
+    [SerializeField] private AudioClip[] hurtClips;
+    [Tooltip("Death / large ragdoll sounds")]
+    [SerializeField] private AudioClip[] deathClips;
+    [Range(0f, 0.5f)]
+    [SerializeField] private float pitchVariance = 0.08f;
+    [Range(0f, 1f)]
+    [SerializeField] private float sfxVolume = 1f;
 
     private List<Rigidbody> ragdollBones = new List<Rigidbody>();
     private Transform player;
@@ -63,6 +80,17 @@ public class EnemyAI : MonoBehaviour
 
         if (animator == null)
             animator = GetComponent<Animator>();
+
+        // get or add audio source (used for local SFX)
+        if (sfxSource == null)
+        {
+            sfxSource = GetComponent<AudioSource>();
+            if (sfxSource == null)
+                sfxSource = gameObject.AddComponent<AudioSource>();
+        }
+        // prefer 3D sound for sfxSource if used for spatial cues
+        sfxSource.spatialBlend = 0.0f; // 0 = 2D by default; keep 0 for non-positional one-shots
+        // if you want the source to be spatial: sfxSource.spatialBlend = 1f;
 
         CollectRagdollBones();
 
@@ -98,17 +126,15 @@ public class EnemyAI : MonoBehaviour
             Debug.LogWarning("Player not found!");
             return;
         }
-        
+
         playerHealth = player.GetComponent<PlayerHealth>();
 
         currentDifficulty = difficulty;
         currentHealth = 30f * difficulty;
 
-        // Reset position and rotation
         transform.position = position;
         transform.rotation = Quaternion.identity;
 
-        // Reset NavMesh Agent
         if (navMeshAgent != null)
         {
             navMeshAgent.stoppingDistance = stoppingDistance;
@@ -117,7 +143,6 @@ public class EnemyAI : MonoBehaviour
             navMeshAgent.updateUpAxis = false;
         }
 
-        // Reset Rigidbody
         if (mainRigidbody != null)
         {
             mainRigidbody.useGravity = true;
@@ -130,7 +155,6 @@ public class EnemyAI : MonoBehaviour
         if (mainCollider != null)
             mainCollider.enabled = true;
 
-        // Disable ragdoll
         isRagdolled = false;
         isPushed = false;
         nextUpdateTime = 0f;
@@ -187,7 +211,6 @@ public class EnemyAI : MonoBehaviour
         if (!navMeshAgent.isOnNavMesh)
             return;
 
-        // Chase the player
         if (Time.time >= nextUpdateTime && !isPushed)
         {
             if (!navMeshAgent.pathPending)
@@ -197,14 +220,11 @@ public class EnemyAI : MonoBehaviour
             nextUpdateTime = Time.time + updateInterval;
         }
 
-        // Rotate towards player
         if (!isPushed)
             RotateTowardsTarget(player.position);
 
-        // Update animator with movement speed
         UpdateAnimator();
 
-        // Detect car push
         DetectCarPush();
     }
 
@@ -254,14 +274,18 @@ public class EnemyAI : MonoBehaviour
                     Vector3 finalForce = impactDirection.normalized * magnitude;
                     Vector3 impactPoint = col.ClosestPoint(transform.position);
 
+                    // play heavy impact at point (spatial)
+                    PlayImpactAtPoint(impactClips, impactPoint, Mathf.Clamp01(carSpeed / 20f + 0.5f));
                     ActivateRagdoll(finalForce, impactPoint);
                     return;
                 }
                 else
                 {
                     playerHealth?.TakeDamage(1);
-                } 
+                }
 
+                // play a light push sound
+                PlayLocalOneShot(pushClips);
                 PushEnemy(col, carSpeed);
                 return;
             }
@@ -281,6 +305,9 @@ public class EnemyAI : MonoBehaviour
         mainRigidbody.isKinematic = false;
         mainRigidbody.linearVelocity = Vector3.zero;
         mainRigidbody.AddForce(pushDir * pushForce, ForceMode.Impulse);
+
+        // small push grunt
+        PlayLocalOneShot(pushClips);
 
         isPushed = true;
         StartCoroutine(RecoverFromPush());
@@ -342,7 +369,7 @@ public class EnemyAI : MonoBehaviour
             bone.isKinematic = false;
             bone.linearVelocity = Vector3.zero;
             bone.angularVelocity = Vector3.zero;
-            
+
             float dist = Vector3.Distance(bone.position, impactPoint);
             if (dist < smallestDist)
             {
@@ -351,8 +378,14 @@ public class EnemyAI : MonoBehaviour
             }
         }
 
+        // heavy ragdoll impact sound at impactPoint
+        PlayImpactAtPoint(impactClips, impactPoint, 1f);
+
         if (closestBone != null)
             closestBone.AddForceAtPosition(force, impactPoint, ForceMode.Impulse);
+
+        // optional death sound/voice
+        PlayImpactAtPoint(deathClips, transform.position, 0.8f);
 
         StartCoroutine(ReturnToPool());
     }
@@ -381,13 +414,18 @@ public class EnemyAI : MonoBehaviour
                 Vector3 finalForce = impactDirection.normalized * magnitude;
                 Vector3 impactPoint = other.ClosestPoint(transform.position);
 
+                PlayImpactAtPoint(impactClips, impactPoint, 1f);
                 ActivateRagdoll(finalForce, impactPoint);
             }
         }
 
         if (other.CompareTag("Bullet"))
         {
-            ActivateRagdoll(other.transform.forward * 10f, other.ClosestPoint(transform.position));
+            // bullet hit sound (small) at contact point
+            Vector3 hitPoint = other.ClosestPoint(transform.position);
+            PlayImpactAtPoint(hurtClips, hitPoint, 0.6f);
+
+            ActivateRagdoll(other.transform.forward * 10f, hitPoint);
             Destroy(other.gameObject);
         }
     }
@@ -395,8 +433,14 @@ public class EnemyAI : MonoBehaviour
     public void TakeDamage(float damage)
     {
         currentHealth -= damage;
+
+        // play hurt grunt with variation
+        PlayLocalOneShot(hurtClips);
+
         if (currentHealth <= 0)
         {
+            // death sound right before returning to pool
+            PlayLocalOneShot(deathClips);
             ZombiePool.Instance.ReturnZombie(this);
         }
     }
@@ -406,4 +450,26 @@ public class EnemyAI : MonoBehaviour
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position + Vector3.up * 0.3f, detectionRadius);
     }
+
+    #region Audio Helpers
+    // plays a random clip from array on the local sfxSource (non-positional by default)
+    private void PlayLocalOneShot(AudioClip[] clips, float volume = -1f)
+    {
+        if (clips == null || clips.Length == 0 || sfxSource == null) return;
+        AudioClip clip = clips[Random.Range(0, clips.Length)];
+        float vol = (volume < 0f) ? sfxVolume : volume;
+        float prevPitch = sfxSource.pitch;
+        sfxSource.pitch = Random.Range(1f - pitchVariance, 1f + pitchVariance);
+        sfxSource.PlayOneShot(clip, vol);
+        sfxSource.pitch = prevPitch;
+    }
+
+    // plays a random clip at world position (spatial). uses built-in PlayClipAtPoint (no pitch variance).
+    private void PlayImpactAtPoint(AudioClip[] clips, Vector3 point, float volume = 1f)
+    {
+        if (clips == null || clips.Length == 0) return;
+        AudioClip clip = clips[Random.Range(0, clips.Length)];
+        AudioSource.PlayClipAtPoint(clip, point, Mathf.Clamp01(volume * sfxVolume));
+    }
+    #endregion
 }
