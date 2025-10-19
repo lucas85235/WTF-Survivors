@@ -1,38 +1,45 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
 /// <summary>
-/// Enemy AI that follows the player using a NavMeshAgent and handles
-/// obstacle avoidance, push-by-car behavior, and NavMesh recovery.
-/// Logic preserved from the original Portuguese version.
+/// Robust Enemy AI that follows the player using a NavMeshAgent and handles
+/// push-by-car behavior, NavMesh recovery, ragdoll system and stuck recovery.
+/// Improvements: stuck detection + multi-step recovery to avoid agents wandering to edges.
 /// </summary>
+[RequireComponent(typeof(NavMeshAgent))]
 public class EnemyAI : MonoBehaviour
 {
     [Header("References")]
     public Transform player;
+    public Animator animator; // Optional animator to disable when ragdolled
     private NavMeshAgent navMeshAgent;
-    private Rigidbody rb;
+    private Rigidbody mainRigidbody;
+    private Collider mainCollider;
 
     [Header("Movement")]
     public float baseSpeed = 5f;
     public float maxSpeed = 7f;
     public float stoppingDistance = 2f;
 
-    [Header("Behavior")]
-    public float detectionDistance = 50f;
+    [Header("Pathing")]
     public float pathUpdateInterval = 0.3f;
     private float nextUpdateTime = 0f;
 
-    [Header("Obstacle Collision")]
+    [Header("Obstacle / Push Detection (offset Y)")]
+    [Tooltip("Vertical offset applied when checking for nearby obstacles.")]
+    public float obstacleDetectYOffset = 0.5f;
+    [Tooltip("Radius used to check for obstacles (not used to steer; just for info).")]
     public float obstacleDetectRadius = 1.5f;
-    public float escapeForce = 10f;
-    public float maxEscapeTime = 0.8f;
-    private float currentEscapeTime = 0f;
-    private bool isEscaping = false;
+
+    [Tooltip("Vertical offset applied when checking for push collisions (vehicles).")]
+    public float pushDetectYOffset = 0.3f;
+    [Tooltip("Radius used to check for push-capable colliders (vehicles).")]
+    public float pushDetectRadius = 2.5f;
 
     [Header("Car Push")]
     public float pushForce = 25f;
-    public float pushDetectRadius = 2.5f;
     public float minPushTime = 0.5f;
     private bool isPushed = false;
     private float currentPushTime = 0f;
@@ -41,14 +48,65 @@ public class EnemyAI : MonoBehaviour
     public float minNavMeshSpeed = 0.1f;
     public float navMeshRecoveryTime = 0.6f;
 
-    private Vector3 currentEscapeDirection = Vector3.zero;
+    [Header("Ragdoll Settings")]
+    [Tooltip("Tag used by vehicles that can ragdoll this enemy.")]
+    public string vehicleTag = "Car";
+    [Tooltip("Minimum vehicle speed required to trigger ragdoll.")]
+    public float minSpeedToRagdoll = 5f;
+    [Tooltip("Base impact force applied when ragdolling.")]
+    public float baseImpactForce = 50f;
+    [Tooltip("Upward component to add to the impact direction.")]
+    public float upwardForceComponent = 0.5f;
+    [Tooltip("Multiplier applied to vehicle speed to contribute to force.")]
+    public float speedToForceMultiplier = 2f;
+    [Tooltip("How long until the ragdoll object is cleaned up/destroyed.")]
+    public float ragdollCleanupTime = 10f;
+
+    [Header("Stuck Detection & Recovery")]
+    [Tooltip("Interval (s) between stuck checks.")]
+    public float stuckCheckInterval = 1f;
+    [Tooltip("Minimum travel distance required during interval to consider agent 'moving'.")]
+    public float stuckDistanceThreshold = 0.5f;
+    [Tooltip("Maximum consecutive stuck detections before trying recovery.")]
+    public int maxStuckRetries = 3;
+    [Tooltip("Radius around player to sample alternative NavMesh points during recovery.")]
+    public float stuckRecoveryRadius = 5f;
+    [Tooltip("Max attempts to sample random NavMesh points during recovery.")]
+    public int stuckRecoveryAttempts = 8;
+
+    // Ragdoll bones
+    private List<Rigidbody> ragdollRigidbodies = new List<Rigidbody>();
+    private bool isRagdolled = false;
+
     private NavMeshPath currentPath;
+
+    // Stuck detection state
+    private Vector3 lastStuckCheckPosition;
+    private float stuckCheckTimer = 0f;
+    private int stuckRetries = 0;
+
+    void Awake()
+    {
+        player = GameObject.FindGameObjectWithTag("Player")?.transform;
+        navMeshAgent = GetComponent<NavMeshAgent>();
+        mainRigidbody = GetComponent<Rigidbody>();
+        mainCollider = GetComponent<Collider>();
+
+        // Collect ragdoll rigidbodies (children) and ensure they are initially kinematic
+        foreach (var rb in GetComponentsInChildren<Rigidbody>())
+        {
+            if (rb == mainRigidbody) continue;
+            ragdollRigidbodies.Add(rb);
+            rb.isKinematic = true;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        }
+
+        currentPath = new NavMeshPath();
+        lastStuckCheckPosition = transform.position;
+    }
 
     void Start()
     {
-        navMeshAgent = GetComponent<NavMeshAgent>();
-        rb = GetComponent<Rigidbody>();
-
         if (navMeshAgent == null)
         {
             Debug.LogError("EnemyAI: NavMeshAgent not found on " + gameObject.name);
@@ -62,50 +120,52 @@ public class EnemyAI : MonoBehaviour
             return;
         }
 
-        if (rb == null)
+        if (mainRigidbody == null)
         {
             Debug.LogError("EnemyAI: Rigidbody not found on " + gameObject.name);
             enabled = false;
             return;
         }
 
-        // NavMeshAgent configuration for stability
+        // Configure navmesh agent: let agent handle avoidance and movement
         navMeshAgent.updateRotation = false;
         navMeshAgent.updateUpAxis = false;
         navMeshAgent.stoppingDistance = stoppingDistance;
+        navMeshAgent.speed = baseSpeed;
+        navMeshAgent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;
+        navMeshAgent.avoidancePriority = 50;
 
         // Rigidbody configuration
-        rb.useGravity = true;
-        rb.constraints = RigidbodyConstraints.FreezeRotation;
-        rb.isKinematic = false;
-
-        currentPath = new NavMeshPath();
+        mainRigidbody.useGravity = true;
+        mainRigidbody.constraints = RigidbodyConstraints.FreezeRotation;
+        mainRigidbody.isKinematic = false;
     }
 
     void Update()
     {
-        if (player == null || navMeshAgent == null || rb == null)
+        if (isRagdolled) return; // while ragdolled, physics controls the object
+
+        if (player == null || navMeshAgent == null || mainRigidbody == null)
             return;
 
-        // Validate that the enemy is on the NavMesh
         if (!navMeshAgent.isOnNavMesh)
         {
-            Debug.LogWarning("EnemyAI: " + gameObject.name + " is not on the NavMesh!");
+            // If not on NavMesh, try sampling and warping to nearest NavMesh spot
+            TryRecoverAgentImmediate();
             return;
         }
 
-        float distanceToPlayer = Vector3.Distance(transform.position, player.position);
-
-        // Deactivate if the player is too far
-        if (distanceToPlayer > detectionDistance)
+        // Always chase the player (no distance-based disabling)
+        if (Time.time >= nextUpdateTime && !isPushed)
         {
-            if (navMeshAgent.hasPath)
-                navMeshAgent.velocity = Vector3.zero;
-            return;
+            // Avoid spamming SetDestination when pathPending
+            if (!navMeshAgent.pathPending)
+            {
+                navMeshAgent.speed = baseSpeed;
+                navMeshAgent.SetDestination(player.position);
+            }
+            nextUpdateTime = Time.time + pathUpdateInterval;
         }
-
-        // Detect pushes from car/player
-        DetectCarPush();
 
         // Manage push timer
         if (isPushed)
@@ -115,199 +175,318 @@ public class EnemyAI : MonoBehaviour
                 isPushed = false;
         }
 
-        // Update path periodically
-        if (Time.time >= nextUpdateTime && !isPushed)
-        {
-            if (distanceToPlayer > stoppingDistance && navMeshAgent.isOnNavMesh)
-            {
-                if (NavMesh.CalculatePath(transform.position, player.position, NavMesh.AllAreas, currentPath))
-                {
-                    if (currentPath.status == NavMeshPathStatus.PathComplete)
-                    {
-                        navMeshAgent.SetPath(currentPath);
-                    }
-                }
-            }
-            else if (distanceToPlayer <= stoppingDistance)
-            {
-                navMeshAgent.velocity = Vector3.zero;
-            }
+        // Detect push collisions and possibly ragdoll
+        DetectCarPush();
 
-            nextUpdateTime = Time.time + pathUpdateInterval;
+        // Stuck detection (runs every stuckCheckInterval)
+        stuckCheckTimer += Time.deltaTime;
+        if (stuckCheckTimer >= stuckCheckInterval)
+        {
+            CheckStuck();
+            stuckCheckTimer = 0f;
+            lastStuckCheckPosition = transform.position;
         }
 
-        // Manage movement and obstacle escape
-        if (!isPushed)
-            UpdateMovement();
+        // If agent is on an OffMeshLink and seems stuck, try to complete it
+        if (navMeshAgent.isOnOffMeshLink)
+        {
+            // Try to complete link to avoid waiting indefinitely
+            navMeshAgent.CompleteOffMeshLink();
+        }
     }
 
-    void UpdateMovement()
+    void CheckStuck()
     {
-        if (!navMeshAgent.isOnNavMesh)
-            return;
-
-        // Decrease escape timer
-        if (isEscaping)
+        if (isRagdolled || isPushed) 
         {
-            currentEscapeTime -= Time.deltaTime;
-            if (currentEscapeTime <= 0)
-                isEscaping = false;
+            // reset counters while pushed or ragdolling
+            stuckRetries = 0;
+            return;
         }
 
-        // Detect nearby obstacles
-        DetectObstacles();
-
-        // Apply movement
-        if (navMeshAgent.hasPath && navMeshAgent.remainingDistance > stoppingDistance)
+        // If agent has no path or is stopped, not considered stuck here
+        if (!navMeshAgent.hasPath || navMeshAgent.isStopped)
         {
-            if (isEscaping)
-            {
-                // Escape movement with validation
-                Vector3 escapeVelocity = currentEscapeDirection * maxSpeed;
-                if (float.IsNaN(escapeVelocity.x) || float.IsNaN(escapeVelocity.y) || float.IsNaN(escapeVelocity.z))
-                    escapeVelocity = Vector3.zero;
+            stuckRetries = 0;
+            return;
+        }
 
-                navMeshAgent.velocity = escapeVelocity;
-            }
-            else
-            {
-                // Normal movement
-                Vector3 dir = navMeshAgent.desiredVelocity.normalized;
+        float moved = Vector3.Distance(transform.position, lastStuckCheckPosition);
 
-                if (float.IsNaN(dir.x) || float.IsNaN(dir.y) || float.IsNaN(dir.z))
-                    dir = Vector3.zero;
-
-                navMeshAgent.velocity = dir * baseSpeed;
-            }
+        // if agent barely moved, increment stuck counter
+        if (moved < stuckDistanceThreshold)
+        {
+            stuckRetries++;
         }
         else
         {
-            navMeshAgent.velocity = Vector3.zero;
+            stuckRetries = 0; // good movement, reset
         }
-    }
 
-    void DetectObstacles()
-    {
-        if (!navMeshAgent.isOnNavMesh)
-            return;
-
-        Collider[] obstacles = Physics.OverlapSphere(transform.position, obstacleDetectRadius);
-
-        if (obstacles.Length > 0 && !isEscaping)
+        // If exceeded allowed retries, attempt recovery
+        if (stuckRetries >= maxStuckRetries)
         {
-            Vector3 fleeDirection = Vector3.zero;
-            int obstacleCount = 0;
-
-            foreach (Collider col in obstacles)
-            {
-                // Ignore self
-                if (col.gameObject == gameObject)
-                    continue;
-
-                // Ignore the player
-                if (col.transform == player)
-                    continue;
-
-                // Calculate direction opposite to obstacle
-                Vector3 obstacleDir = (transform.position - col.transform.position).normalized;
-                fleeDirection += obstacleDir;
-                obstacleCount++;
-            }
-
-            if (obstacleCount > 1)
-            {
-                fleeDirection = fleeDirection.normalized;
-
-                // Validate flee direction
-                if (!float.IsNaN(fleeDirection.x) && !float.IsNaN(fleeDirection.y) && !float.IsNaN(fleeDirection.z))
-                {
-                    currentEscapeDirection = fleeDirection;
-                    isEscaping = true;
-                    currentEscapeTime = maxEscapeTime;
-                }
-            }
+            stuckRetries = 0; // reset for next cycle
+            StartCoroutine(RecoverAgentRoutine());
         }
     }
 
+    private IEnumerator RecoverAgentRoutine()
+    {
+        // Safety early exit
+        if (isRagdolled) yield break;
+
+        // 1) Try to recalculate path to player
+        if (NavMesh.CalculatePath(transform.position, player.position, NavMesh.AllAreas, currentPath))
+        {
+            if (currentPath.status == NavMeshPathStatus.PathComplete)
+            {
+                navMeshAgent.ResetPath();
+                navMeshAgent.SetPath(currentPath);
+                yield break;
+            }
+        }
+
+        // 2) Try to sample player's position on NavMesh
+        if (NavMesh.SamplePosition(player.position, out NavMeshHit hitPlayer, 2f, NavMesh.AllAreas))
+        {
+            navMeshAgent.Warp(hitPlayer.position);
+            navMeshAgent.ResetPath();
+            navMeshAgent.SetDestination(player.position);
+            yield break;
+        }
+
+        // 3) Try multiple random samples around player
+        for (int i = 0; i < stuckRecoveryAttempts; ++i)
+        {
+            Vector3 randomOffset = Random.insideUnitSphere * stuckRecoveryRadius;
+            randomOffset.y = 0f;
+            Vector3 samplePos = player.position + randomOffset;
+
+            if (NavMesh.SamplePosition(samplePos, out NavMeshHit sampleHit, 2f, NavMesh.AllAreas))
+            {
+                navMeshAgent.Warp(sampleHit.position);
+                navMeshAgent.ResetPath();
+                navMeshAgent.SetDestination(player.position);
+                yield break;
+            }
+
+            yield return null; // allow one frame between attempts
+        }
+
+        // 4) As a last resort, warp to current transform position (forces agent to reattach)
+        navMeshAgent.Warp(transform.position);
+        navMeshAgent.ResetPath();
+        navMeshAgent.SetDestination(player.position);
+        yield break;
+    }
+
+    // Immediate try to recover when agent is off-navmesh
+    void TryRecoverAgentImmediate()
+    {
+        if (isRagdolled) return;
+
+        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+        {
+            navMeshAgent.Warp(hit.position);
+            navMeshAgent.ResetPath();
+            navMeshAgent.SetDestination(player.position);
+        }
+    }
+
+    /// <summary>
+    /// Detect push by the player's car (or "Player"-tagged rigidbody near the enemy).
+    /// If the colliding vehicle's speed is high enough, activate ragdoll.
+    /// </summary>
     void DetectCarPush()
     {
-        if (isPushed || rb == null)
+        if (isPushed || mainRigidbody == null || isRagdolled)
             return;
 
-        Collider[] cols = Physics.OverlapSphere(transform.position, pushDetectRadius);
+        Vector3 checkCenter = transform.position + Vector3.up * pushDetectYOffset;
+        Collider[] cols = Physics.OverlapSphere(checkCenter, pushDetectRadius);
 
         foreach (Collider col in cols)
         {
             if (col.CompareTag("Player"))
             {
-                Vector3 pushDir = (transform.position - col.transform.position).normalized;
-                pushDir.y = 0.3f;
+                Rigidbody carRb = col.attachedRigidbody;
+                if (carRb == null) continue;
 
-                // Validate direction
+                float carSpeed = carRb.linearVelocity.magnitude;
+
+                // If speed high -> ragdoll
+                if (carSpeed >= minSpeedToRagdoll)
+                {
+                    Vector3 impactDirection = (carRb.linearVelocity.normalized + (Vector3.up * upwardForceComponent)).normalized;
+                    float impactMagnitude = baseImpactForce + (carSpeed * speedToForceMultiplier);
+                    Vector3 finalForce = impactDirection * impactMagnitude;
+                    Vector3 impactPoint = col.ClosestPoint(transform.position);
+
+                    ActivateRagdoll(finalForce, impactPoint);
+                    return;
+                }
+
+                // Stop the agent (do not disable component) and let physics move object
+                if (navMeshAgent.isOnNavMesh)
+                {
+                    navMeshAgent.isStopped = true;
+                    navMeshAgent.updatePosition = false;
+                }
+
+                // Apply force
+                Vector3 pushDir = (transform.position - col.transform.position).normalized;
+                pushDir.y = 0.1f;
                 if (float.IsNaN(pushDir.x) || float.IsNaN(pushDir.y) || float.IsNaN(pushDir.z))
                     pushDir = Vector3.forward;
 
-                // Disable NavMeshAgent
-                if (navMeshAgent.isOnNavMesh)
-                    navMeshAgent.enabled = false;
+                mainRigidbody.isKinematic = false;
+                mainRigidbody.linearVelocity = Vector3.zero;
+                mainRigidbody.angularVelocity = Vector3.zero;
+                mainRigidbody.AddForce(pushDir * pushForce, ForceMode.Impulse);
 
-                // Apply force
-                rb.linearVelocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-                rb.isKinematic = false;
-                rb.AddForce(pushDir * pushForce, ForceMode.Impulse);
-
-                // Activate push flag
+                // Set push state and start recovery coroutine
                 isPushed = true;
                 currentPushTime = minPushTime;
 
-                // Schedule NavMesh re-enable
-                CancelInvoke(nameof(ReenableNavMesh));
-                Invoke(nameof(ReenableNavMesh), navMeshRecoveryTime);
+                // Start recovery coroutine which will re-enable agent safely with timeout
+                StopCoroutine("RecoverFromPush");
+                StartCoroutine(RecoverFromPush(navMeshRecoveryTime, minNavMeshSpeed));
 
                 break;
             }
         }
     }
 
-    void ReenableNavMesh()
+    // Recover from push - updated to reset stuck state on success/timeout
+    private IEnumerator RecoverFromPush(float timeoutSeconds, float velocityThreshold)
     {
-        if (navMeshAgent == null || rb == null)
-            return;
+        float timer = 0f;
+        float checkInterval = 0.08f;
 
-        // Validate conditions before re-enabling
-        float currentSpeed = rb.linearVelocity.magnitude;
-        bool isNearGround = Physics.Raycast(transform.position, Vector3.down, 1.5f);
+        // Wait a short initial delay so physics can move the body
+        yield return new WaitForSeconds(0.05f);
 
-        // Only re-enable if nearly stopped AND near ground
-        if (currentSpeed < minNavMeshSpeed && isNearGround)
+        while (timer < timeoutSeconds)
         {
-            // Check for a valid position on the NavMesh
-            if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2f, NavMesh.AllAreas))
+            if (isRagdolled) yield break;
+
+            float currentSpeed = mainRigidbody.linearVelocity.magnitude;
+
+            if (currentSpeed < velocityThreshold)
             {
-                navMeshAgent.enabled = true;
-                navMeshAgent.Warp(hit.position);
-                rb.linearVelocity = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-                isEscaping = false;
+                break;
             }
+
+            timer += checkInterval;
+            yield return new WaitForSeconds(checkInterval);
+        }
+
+        // Finalize recovery
+        mainRigidbody.linearVelocity = Vector3.zero;
+        mainRigidbody.angularVelocity = Vector3.zero;
+        mainRigidbody.isKinematic = true;
+
+        // Try robust reattachment to NavMesh
+        if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2f, NavMesh.AllAreas))
+        {
+            navMeshAgent.Warp(hit.position);
         }
         else
         {
-            // Try again shortly
-            Invoke(nameof(ReenableNavMesh), 0.2f);
+            navMeshAgent.Warp(transform.position);
+        }
+
+        navMeshAgent.updatePosition = true;
+        navMeshAgent.isStopped = false;
+
+        isPushed = false;
+
+        // reset stuck tracking so we don't immediately attempt recovery
+        stuckRetries = 0;
+        lastStuckCheckPosition = transform.position;
+
+        yield break;
+    }
+
+    /// <summary>
+    /// Activate ragdoll: disable AI and animator, enable child rigidbodies and apply force.
+    /// </summary>
+    public void ActivateRagdoll(Vector3 force, Vector3 hitPoint)
+    {
+        if (isRagdolled) return;
+        isRagdolled = true;
+
+        if (navMeshAgent) navMeshAgent.enabled = false;
+        if (animator) animator.enabled = false;
+        if (mainCollider) mainCollider.enabled = false;
+
+        if (mainRigidbody) mainRigidbody.isKinematic = true;
+
+        // Enable ragdoll bodies and apply impulse to closest bone
+        Rigidbody closestBone = null;
+        float closestDistance = float.MaxValue;
+
+        foreach (var boneRb in ragdollRigidbodies)
+        {
+            boneRb.isKinematic = false;
+            float dist = Vector3.Distance(boneRb.position, hitPoint);
+            if (dist < closestDistance)
+            {
+                closestDistance = dist;
+                closestBone = boneRb;
+            }
+        }
+
+        if (closestBone != null)
+            closestBone.AddForceAtPosition(force, hitPoint, ForceMode.Impulse);
+
+        StartCoroutine(CleanupRagdoll());
+    }
+
+    private IEnumerator CleanupRagdoll()
+    {
+        yield return new WaitForSeconds(ragdollCleanupTime);
+        Destroy(gameObject);
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (isRagdolled) return;
+
+        if (other.CompareTag(vehicleTag))
+        {
+            Rigidbody carRb = other.attachedRigidbody;
+            if (carRb == null) return;
+
+            float carSpeed = carRb.linearVelocity.magnitude;
+
+            if (carSpeed < minSpeedToRagdoll)
+            {
+                // optional minor hit feedback
+                return;
+            }
+
+            Vector3 impactDirection = (carRb.linearVelocity.normalized + (Vector3.up * upwardForceComponent)).normalized;
+            float impactMagnitude = baseImpactForce + (carSpeed * speedToForceMultiplier);
+            Vector3 finalForce = impactDirection * impactMagnitude;
+            Vector3 impactPoint = other.ClosestPoint(transform.position);
+
+            ActivateRagdoll(finalForce, impactPoint);
         }
     }
 
     void OnDrawGizmosSelected()
     {
-        Gizmos.color = Color.green;
-        Gizmos.DrawWireSphere(transform.position, detectionDistance);
-
+        // visualize obstacle and push checks with Y offsets
         Gizmos.color = Color.red;
-        Gizmos.DrawWireSphere(transform.position, obstacleDetectRadius);
+        Gizmos.DrawWireSphere(transform.position + Vector3.up * obstacleDetectYOffset, obstacleDetectRadius);
 
         Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(transform.position, pushDetectRadius);
+        Gizmos.DrawWireSphere(transform.position + Vector3.up * pushDetectYOffset, pushDetectRadius);
+
+        // optional: visualize player's sampling radius for stuck recovery
+        Gizmos.color = new Color(0.2f, 0.6f, 1f, 0.15f);
+        Gizmos.DrawWireSphere(player != null ? player.position : transform.position, stuckRecoveryRadius);
     }
 }
