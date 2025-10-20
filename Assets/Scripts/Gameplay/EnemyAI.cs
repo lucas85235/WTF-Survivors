@@ -260,6 +260,11 @@ public class EnemyAI : MonoBehaviour
 
         animator.SetFloat(moveSpeedParam, currentSpeed);
         animator.SetFloat(AnimationSpeed, baseSpeed * currentDifficulty);
+
+        if (isPushed)
+        {
+            animator.SetTrigger("Attack");
+        }
     }
 
     void DetectCarPush()
@@ -398,6 +403,8 @@ public class EnemyAI : MonoBehaviour
 
         // optional death sound/voice
         PlayImpactAtPoint(deathClips, transform.position, 0.8f);
+
+        ComboScoreSystem.AddScore(10);
 
         StartCoroutine(ReturnToPool());
     }

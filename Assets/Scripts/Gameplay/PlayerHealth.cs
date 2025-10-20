@@ -15,6 +15,9 @@ public class PlayerHealth : MonoBehaviour
     [SerializeField] private float _animationDuration = 0.5f;
     [SerializeField] private float _scaleMultiplier = 1.1f;
 
+    [Header("Dependencies")]
+    [SerializeField] private CarDestruction _carDestruction;
+
     [Header("Events")]
     public UnityEvent OnPlayerDied;
 
@@ -84,8 +87,9 @@ public class PlayerHealth : MonoBehaviour
     private void Die()
     {
         Debug.Log("Player has died!");
-        gameObject.SetActive(false);
-        Invoke("DieEvent", 0.5f);
+        _carDestruction.DestroyCar();
+
+        Invoke("DieEvent", 1.5f);
     }
 
     private void DieEvent()
