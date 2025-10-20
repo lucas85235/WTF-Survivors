@@ -12,6 +12,7 @@ public class EnemyAI : MonoBehaviour
     [SerializeField] private NavMeshAgent navMeshAgent;
     [SerializeField] private Rigidbody mainRigidbody;
     [SerializeField] private Collider mainCollider;
+    [SerializeField] private GameObject[] models;
 
     [Header("Movement")]
     [SerializeField] private float baseSpeed = 5f;
@@ -102,6 +103,17 @@ public class EnemyAI : MonoBehaviour
         }
 
         isInitialized = true;
+
+        int randomModelIndex = Random.Range(0, models.Length);
+        for (int i = models.Length - 1; i >= 0; i--)
+        {
+            if (i == randomModelIndex)
+            {
+                models[i].SetActive(true);
+            }
+            else Destroy(models[i]);
+        }
+        models = null;
     }
 
     void CollectRagdollBones()
