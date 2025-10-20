@@ -59,6 +59,7 @@ public class EnemyAI : MonoBehaviour
     private float currentDifficulty = 1f;
     private float currentHealth = 30f;
     private bool isInitialized = false;
+    private Vector3 lastNavMeshPosition;
 
     public float Health => currentHealth;
 
@@ -82,16 +83,13 @@ public class EnemyAI : MonoBehaviour
         if (animator == null)
             animator = GetComponent<Animator>();
 
-        // get or add audio source (used for local SFX)
         if (sfxSource == null)
         {
             sfxSource = GetComponent<AudioSource>();
             if (sfxSource == null)
                 sfxSource = gameObject.AddComponent<AudioSource>();
         }
-        // prefer 3D sound for sfxSource if used for spatial cues
-        sfxSource.spatialBlend = 0.0f; // 0 = 2D by default; keep 0 for non-positional one-shots
-        // if you want the source to be spatial: sfxSource.spatialBlend = 1f;
+        sfxSource.spatialBlend = 0.0f;
 
         CollectRagdollBones();
 
@@ -151,14 +149,15 @@ public class EnemyAI : MonoBehaviour
         {
             navMeshAgent.stoppingDistance = stoppingDistance;
             navMeshAgent.speed = baseSpeed * (0.8f + difficulty * 0.2f);
-            navMeshAgent.updateRotation = false;
+            navMeshAgent.updateRotation = true;
+            navMeshAgent.updatePosition = true;
             navMeshAgent.updateUpAxis = false;
         }
 
         if (mainRigidbody != null)
         {
             mainRigidbody.useGravity = true;
-            mainRigidbody.isKinematic = false;
+            mainRigidbody.isKinematic = true; // Inimigo não-ragdollado usa cinemático
             mainRigidbody.constraints = RigidbodyConstraints.FreezeRotation;
             mainRigidbody.linearVelocity = Vector3.zero;
             mainRigidbody.angularVelocity = Vector3.zero;
@@ -170,6 +169,7 @@ public class EnemyAI : MonoBehaviour
         isRagdolled = false;
         isPushed = false;
         nextUpdateTime = 0f;
+        lastNavMeshPosition = position;
 
         foreach (var bone in ragdollBones)
         {
@@ -195,7 +195,12 @@ public class EnemyAI : MonoBehaviour
             isPushed = false;
 
             if (navMeshAgent != null)
+            {
                 navMeshAgent.enabled = true;
+                navMeshAgent.updateRotation = true;
+                navMeshAgent.updatePosition = true;
+                navMeshAgent.isStopped = false;
+            }
 
             if (animator != null)
                 animator.enabled = true;
@@ -204,7 +209,7 @@ public class EnemyAI : MonoBehaviour
                 mainCollider.enabled = true;
 
             if (mainRigidbody != null)
-                mainRigidbody.isKinematic = false;
+                mainRigidbody.isKinematic = true;
 
             foreach (var bone in ragdollBones)
             {
@@ -215,7 +220,7 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    void Update()
+    void FixedUpdate()
     {
         if (isRagdolled || player == null || navMeshAgent == null)
             return;
@@ -223,6 +228,7 @@ public class EnemyAI : MonoBehaviour
         if (!navMeshAgent.isOnNavMesh)
             return;
 
+        // Atualizar destino periodicamente
         if (Time.time >= nextUpdateTime && !isPushed)
         {
             if (!navMeshAgent.pathPending)
@@ -232,22 +238,11 @@ public class EnemyAI : MonoBehaviour
             nextUpdateTime = Time.time + updateInterval;
         }
 
-        if (!isPushed)
-            RotateTowardsTarget(player.position);
+        // Sincronizar posição com NavMeshAgent
+        lastNavMeshPosition = navMeshAgent.nextPosition;
 
         UpdateAnimator();
-
         DetectCarPush();
-    }
-
-    void RotateTowardsTarget(Vector3 targetPos)
-    {
-        Vector3 direction = (targetPos - transform.position).normalized;
-        if (direction.sqrMagnitude > 0.01f)
-        {
-            Quaternion targetRotation = Quaternion.LookRotation(direction);
-            transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
-        }
     }
 
     void UpdateAnimator()
@@ -260,11 +255,6 @@ public class EnemyAI : MonoBehaviour
 
         animator.SetFloat(moveSpeedParam, currentSpeed);
         animator.SetFloat(AnimationSpeed, baseSpeed * currentDifficulty);
-
-        if (isPushed)
-        {
-            animator.SetTrigger("Attack");
-        }
     }
 
     void DetectCarPush()
@@ -291,7 +281,6 @@ public class EnemyAI : MonoBehaviour
                     Vector3 finalForce = impactDirection.normalized * magnitude;
                     Vector3 impactPoint = col.ClosestPoint(transform.position);
 
-                    // play heavy impact at point (spatial)
                     PlayImpactAtPoint(impactClips, impactPoint, Mathf.Clamp01(carSpeed / 20f + 0.5f));
                     ActivateRagdoll(finalForce, impactPoint);
                     return;
@@ -301,7 +290,6 @@ public class EnemyAI : MonoBehaviour
                     playerHealth?.TakeDamage(1);
                 }
 
-                // play a light push sound
                 PlayLocalOneShot(pushClips);
                 PushEnemy(col, carSpeed);
                 return;
@@ -313,17 +301,17 @@ public class EnemyAI : MonoBehaviour
     {
         if (navMeshAgent == null || mainRigidbody == null) return;
 
+        // Desativar NavMesh temporariamente
         navMeshAgent.isStopped = true;
-        navMeshAgent.updatePosition = false;
 
         Vector3 pushDir = (transform.position - col.transform.position).normalized;
         pushDir.y = 0.1f;
 
+        // Ativar física para o push
         mainRigidbody.isKinematic = false;
         mainRigidbody.linearVelocity = Vector3.zero;
         mainRigidbody.AddForce(pushDir * pushForce, ForceMode.Impulse);
 
-        // small push grunt
         PlayLocalOneShot(pushClips);
 
         isPushed = true;
@@ -332,29 +320,33 @@ public class EnemyAI : MonoBehaviour
 
     IEnumerator RecoverFromPush()
     {
-        yield return new WaitForSeconds(0.1f);
+        yield return new WaitForSeconds(0.15f);
 
+        // Aguardar até que a velocidade seja mínima ou timeout
         float timer = 0f;
-        while (timer < 1f && mainRigidbody.linearVelocity.magnitude > 0.1f)
+        float maxWaitTime = 1.5f;
+        while (timer < maxWaitTime && mainRigidbody.linearVelocity.magnitude > 0.2f)
         {
-            timer += 0.05f;
-            yield return new WaitForSeconds(0.05f);
+            timer += Time.deltaTime;
+            yield return null;
         }
 
+        // Resetar para cinemático
         if (mainRigidbody != null)
         {
             mainRigidbody.linearVelocity = Vector3.zero;
+            mainRigidbody.angularVelocity = Vector3.zero;
             mainRigidbody.isKinematic = true;
         }
 
-        if (navMeshAgent != null && NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 2f, NavMesh.AllAreas))
-        {
-            navMeshAgent.Warp(hit.position);
-        }
-
+        // Reacomodar no NavMesh
         if (navMeshAgent != null)
         {
-            navMeshAgent.updatePosition = true;
+            if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+            {
+                navMeshAgent.Warp(hit.position);
+            }
+
             navMeshAgent.isStopped = false;
         }
 
@@ -395,16 +387,14 @@ public class EnemyAI : MonoBehaviour
             }
         }
 
-        // heavy ragdoll impact sound at impactPoint
         PlayImpactAtPoint(impactClips, impactPoint, 1f);
 
         if (closestBone != null)
             closestBone.AddForceAtPosition(force, impactPoint, ForceMode.Impulse);
 
-        // optional death sound/voice
         PlayImpactAtPoint(deathClips, transform.position, 0.8f);
 
-        ComboScoreSystem.AddScore(10);
+        ComboScoreSystem.AddScore(100);
 
         StartCoroutine(ReturnToPool());
     }
@@ -440,7 +430,6 @@ public class EnemyAI : MonoBehaviour
 
         if (other.CompareTag("Bullet"))
         {
-            // bullet hit sound (small) at contact point
             Vector3 hitPoint = other.ClosestPoint(transform.position);
             PlayImpactAtPoint(hurtClips, hitPoint, 0.6f);
 
@@ -453,12 +442,10 @@ public class EnemyAI : MonoBehaviour
     {
         currentHealth -= damage;
 
-        // play hurt grunt with variation
         PlayLocalOneShot(hurtClips);
 
         if (currentHealth <= 0)
         {
-            // death sound right before returning to pool
             PlayLocalOneShot(deathClips);
             ZombiePool.Instance.ReturnZombie(this);
         }
@@ -471,7 +458,6 @@ public class EnemyAI : MonoBehaviour
     }
 
     #region Audio Helpers
-    // plays a random clip from array on the local sfxSource (non-positional by default)
     private void PlayLocalOneShot(AudioClip[] clips, float volume = -1f)
     {
         if (clips == null || clips.Length == 0 || sfxSource == null) return;
@@ -483,7 +469,6 @@ public class EnemyAI : MonoBehaviour
         sfxSource.pitch = prevPitch;
     }
 
-    // plays a random clip at world position (spatial). uses built-in PlayClipAtPoint (no pitch variance).
     private void PlayImpactAtPoint(AudioClip[] clips, Vector3 point, float volume = 1f)
     {
         if (clips == null || clips.Length == 0) return;

@@ -343,6 +343,10 @@ public class CarController : MonoBehaviour
             // // Play zombie hit sound at contact point (optional)
             // PlayImpactAtPoint(_zombieHitClips, contactPoint, 0.9f);
         }
+        else if (other.CompareTag("KillBox"))
+        {
+            GetComponent<PlayerHealth>()?.TakeDamage(9999);
+        }
         else
         {
             // Play general collision impact sound at contact point

@@ -178,7 +178,7 @@ MonoBehaviour:
   - {fileID: 1654838119882368724}
   baseSpeed: 5
   stoppingDistance: 2
-  updateInterval: 0.3
+  updateInterval: 0.2
   rotationSpeed: 10
   detectionRadius: 1
   pushForce: 2
